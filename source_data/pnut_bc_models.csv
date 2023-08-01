@@ -1,0 +1,12 @@
+obj,perm.obj,type,colname,cov,name,abbr
+T00,T00.p,normal,Temp_0min,,Baseline temperature,Baseline temp
+T15,T15.p,normal,Temp_15min,Temp_0min,Temperature at 15 min,Temp at 15 min
+T30,T30.p,normal,Temp_30min,Temp_0min,Temperature at 30 min,Temp at 30 min
+T45,T45.p,normal,Temp_45min,Temp_0min,Temperature at 45 min,Temp at 45 min
+T60,T60.p,normal,Temp_60min,Temp_0min,Temperature at 60 min,Temp at 60 min
+minTemp,MinTemp.p,normal,Min_Temp,Temp_0min,Minimum temperature,Min temp
+minTempTime,MinTempTime.p,np,Min_Temp_Time,,Time of minimum temperature,Time of min temp
+IgE,IgE.p,normal,PNsIgE,,Post-sensitization peanut-specific IgE (ug/mL),Post-sensitization PNsIgE
+sympScore,SympScore.p,np,Symptom_score,,Symptom score,Symptom score
+Taac,Taac.p,normal,Temp_aac,,Temperature - area under the curve,Temp - AUC
+cluster_1vs23,cluster_1vs23.p,binary,cluster_1vs23,,Temperature trajectory cluster (non-reactors vs reactors),Temp trajectory cluster
