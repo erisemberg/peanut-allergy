@@ -23,8 +23,8 @@
 library(tidyverse)
 library(readxl)
 library(stringi)
-source("utils.R")
-source("qtl_functions.R")
+source("code-dependencies/utils.R")
+source("code-dependencies/qtl_functions.R")
 
 ensure_directory("results")
 log <- make_logger("results/file_processing_notes.md")
@@ -40,9 +40,10 @@ Y_MT_out_file <- "derived_data/Geno_CC27xC3H_Y_MT.csv"
 num_F2s = 365 # number of genotyped F2 (or BC) mice
 crosstype = "bc" # cross type (f2 or bc)
 pheno.names = c("Cage", "Batch", "Geno_ID", "sex", "Temp_0min", "Temp_15min", "Temp_30min",
-                "Temp_45min", "Temp_60min", "Min_Temp", "Min_Temp_Time", "PNsIgE", 
-                "Symptom_score") # Phenotypes to include
-infection = NULL # infection type 
+                "Temp_45min", "Temp_60min", "Delta_15min", "Delta_30min", "Delta_45min",
+                "Delta_60min", "Min_Temp", "Min_Temp_Time", "PNsIgE", "Symptom_score",
+                "Symptom_bin", "Diarrhea_bin", "Diarrhea_time") # Phenotypes to include
+infection = NULL # infection type (SARS-CoV, PBS, HKU3-CoV, or NULL)
 
 A.ref = "CC027.GeniUnc" # parent mouse representing A genotype 
 B.ref = "C3H.HeJ" # parent mouse representing B genotype 

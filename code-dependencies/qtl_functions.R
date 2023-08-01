@@ -6,8 +6,8 @@ library(shades)
 library(scales)
 library(extRemes)
 library(tidyverse)
-source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/dependencies/utils.R")
-source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/lmmultiresponse.R")
+source("code-dependencies/utils.R")
+source("code-dependencies/lmmultiresponse.R")
 
 
 
