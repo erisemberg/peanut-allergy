@@ -23,26 +23,26 @@
 library(tidyverse)
 library(readxl)
 library(stringi)
-source("code-dependencies/utils.R")
-source("code-dependencies/qtl_functions.R")
+source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/dependencies/utils.R")
+source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/qtl_functions.R")
 
-ensure_directory("results")
-log <- make_logger("results/file_processing_notes.md")
+log <- make_logger("file_processing_notes.md")
 
 #---------------------------------Parameters-----------------------------------#
+setwd("/Users/ellenrisemberg/Documents/ValdarFerris/Peanut_Crosses/backcross/")
+  
 geno_file <- "source_data/Cr_WB02_miniMUGA-06242021.csv"
 pad_geno_ids <- FALSE
 pheno_file <- "source_data/CC027xC3H_phenotypes.xlsx"
 ensure_directory("derived_data")
-out_file <- "derived_data/Rqtl_CC27xC3H_BC.csv"
+out_file <- "derived_data/Rqtl_CC27xC3H_BCv2.csv"
 Y_MT_out_file <- "derived_data/Geno_CC27xC3H_Y_MT.csv"
 
 num_F2s = 365 # number of genotyped F2 (or BC) mice
 crosstype = "bc" # cross type (f2 or bc)
+# Phenotypes to include
 pheno.names = c("Cage", "Batch", "Geno_ID", "sex", "Temp_0min", "Temp_15min", "Temp_30min",
-                "Temp_45min", "Temp_60min", "Delta_15min", "Delta_30min", "Delta_45min",
-                "Delta_60min", "Min_Temp", "Min_Temp_Time", "PNsIgE", "Symptom_score",
-                "Symptom_bin", "Diarrhea_bin", "Diarrhea_time") # Phenotypes to include
+                "Temp_45min", "Temp_60min", "Min_Temp", "Min_Temp_Time", "PNsIgE", "Symptom_score") 
 infection = NULL # infection type (SARS-CoV, PBS, HKU3-CoV, or NULL)
 
 A.ref = "CC027.GeniUnc" # parent mouse representing A genotype 
@@ -117,8 +117,7 @@ geno <- geno[which(geno$het_all != 1),]
 log(paste("After removing markers with all het calls: ", nrow(geno), sep=""))
 
 # Plot x = ref/(ref+alt) and y = het/(ref+alt+het)
-ensure_directory("figs/supplemental")
-png("figs/supplemental/marker_qc_plot.png", width=600)
+png("figs/marker_qc_plot.png", width=600)
 par(mar = c(5,6,4,1)+.1)
 plot(x=geno$het_all, y=geno$ref_alt, main="Autosomal and X markers", 
      xlab="Het/(Het + Ref + Alt)", ylab="Ref/(Ref + Alt)", cex.main = 2, 
@@ -131,8 +130,8 @@ if (crosstype == "f2"){
   # For autosomes, looking for het_all to be ~0.5. For X-chr, het_all should be ~0.25
   geno <- geno[which(((geno$Chromosome != "X") & (geno$het_all >= 0.4) & (geno$het_all <= 0.6)) | 
                      ((geno$Chromosome == "X") & (geno$het_all >= 0.15) & (geno$het_all <= 0.35))),]
-} else if (crosstype == "bc") {
-  geno <- geno[which((geno$het_all >= 0.4) & (geno$het_all <= 0.6)),] # Looking for het:hom ratio of ~1:1
+} else if (crosstype == "bc") { # don't need different ratio for X-chr b/c all bc mice are female 
+  geno <- geno[which((geno$het_all >= 0.3) & (geno$het_all <= 0.7)),] # Looking for het:hom ratio of ~1:1
   geno <- geno[which((geno$ref_alt == 0) | (geno$ref_alt == 1)),] # Need hard cutoff to satisfy R/qtl 
 }
 

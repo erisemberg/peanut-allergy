@@ -1,0 +1,2164 @@
+---
+title: "rqtl_pnut_bc"
+author: "Ellen Risemberg"
+date: "8/3/2021"
+output: 
+  html_document:
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ellenrisemberg/Documents/ValdarFerris/Peanut_Crosses/backcross/")
+```
+
+# C3H x CC27 Backcross QTL Analysis 
+
+See `rqtl_file_proc-pnutbc.R` for R/qtl file generation information. 
+
+* A genotype: CC027
+* B genotype: C3H/HeJ 
+
+Genotypes are coded in R/qtl so that 1 = AA and 2 = AB. 
+
+--------------------------------------------------------------------------------
+### Setup
+--------------------------------------------------------------------------------
+
+```{r pkgs, message = FALSE}
+library(qtl)
+library(MASS)
+library(MESS)
+library(onewaytests)
+library(bestNormalize)
+library(readxl)
+library(ggplot2)
+library(tidyverse)
+library(factoextra)
+library(knitr)
+library(lme4qtl)
+library(gt)
+library(rstatix)
+library(extRemes)
+library(RColorBrewer)
+library(webshot)
+#webshot::install_phantomjs()
+library(qtl2)
+library(vqtl2)
+library(ggpubr)
+source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/qtl_functions.R")
+source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/plot_noX.R")
+```
+
+Load ggplot themes:
+
+```{r ggthemes}
+load_themes()
+```
+
+--------------------------------------------------------------------------------
+### Load data
+--------------------------------------------------------------------------------
+
+```{r loadcross}
+WB02 <- read.cross(format = "csv", file="derived_data/Rqtl_CC27xC3H_BC.csv",
+                   na.strings=c("-", "NA", 'na'), genotypes=c("AA", "AB"),
+                   alleles=c("A", "B"), crosstype=c("bc"))
+WB02 <- jittermap(WB02)
+summary(WB02)
+raw_phenos <- WB02$pheno # save raw phenos 
+
+WB02v2 <- convert2cross2(WB02) # convert to Rqtl2 cross object 
+```
+
+--------------------------------------------------------------------------------
+### Genetic map
+--------------------------------------------------------------------------------
+
+```{r genmap}
+plotMap(WB02)
+
+estmapfile <- "derived_data/other_Robjects/estmap.Rdata"
+if (file.exists(estmapfile)){
+  load(estmapfile)
+} else { # file doesn't exist 
+  estmap <- est.map(WB02)
+  save(estmap, file = estmapfile)
+}
+
+plotMap(WB02, estmap)
+```
+
+### Genetic map statistics
+
+largest gap:
+
+```{r largestgap}
+find_map_gaps(WB02v2$gmap, min_gap = 10)
+```
+
+Median physical distance in Mbp:
+
+```{r distance}
+alldistances <- vector()
+  
+for (i in 1:length(WB02v2$gmap)){
+  positions <- WB02v2$gmap[[i]]
+  distances <- positions[2:length(positions)] - positions[1:(length(positions)-1)]
+  
+  alldistances <- append(alldistances, distances)
+}
+
+median(alldistances)
+```
+
+
+--------------------------------------------------------------------------------
+## Exploratory data analysis  
+--------------------------------------------------------------------------------
+
+Removed the following outliers from phenotype file prior to generation of R/qtl file:
+
+* Cr_WB02_F0359 (Temp_0min is in the 300s) 
+* Cr_WB02_F0480 (Temp_0min is 27.5 - much lower than rest of mice)
+
+### Temperature trajectory plots
+
+Set up data: 
+
+```{r}
+phenos = c('Temp_0min', 'Temp_15min', 'Temp_30min', 'Temp_45min','Temp_60min')  
+
+## for ggplot
+dat <- WB02$pheno$mouse_ID
+for (i in 1:length(phenos)){
+  y <- WB02$pheno[phenos[i]]
+  dat <- cbind(dat, y)
+}
+dat <- as.data.frame(dat)
+colnames(dat) <- c('mouse_ID', '0', '15', '30', '45', '60')
+dat <- pivot_longer(dat, cols = c(2:6), names_to = 'Time', values_to = 'Temp')
+```
+
+Plot temperature trajectories for each mouse:
+
+```{r}
+bctemp <- ggplot(dat, aes(x = Time, y = Temp)) +
+  geom_line(aes(group = mouse_ID), color = 'gray45', size=0.2) +
+  labs(x = "Minutes post-challenge", y = "Body temperature") +
+  scale_x_discrete(expand = c(0.03,0.03)) +
+  scale_y_continuous(breaks = seq(from = 26, to = 40, by = 2)) +
+  big_theme
+bctemp
+
+png('figs/eda/bc-temp.png', width = 550)
+bctemp
+dev.off()
+```
+
+
+### Hierarchical clustering:
+
+Hierarchical clustering
+
+```{r}
+d <- dist(WB02$pheno[,phenos])
+h <- hclust(d)
+clusters <- cutree(h, k=3)
+WB02$pheno[,'cluster'] <- clusters
+```
+
+Plot hierarchical clustering tree
+
+```{r include=F}
+#jpeg("figs/eda/traj_clusters.jpeg", width=1000)
+plot(h, labels=FALSE, ylab = "", xlab = "", cex.main = 1.5)
+title(ylab = "Height", cex.lab = 1.5, line=2.2)
+title(xlab = "Distance", cex.lab = 1.5, line=0.5)
+#dev.off()
+```
+
+Plot trajectories, colored by cluster
+
+```{r}
+dat$cluster <- rep(clusters, each=5)
+
+pclust <- ggplot(dat, aes(x = Time, y = Temp)) +
+  geom_line(aes(group = mouse_ID, color = as.factor(cluster)), size=0.2) +
+  scale_color_brewer(palette = 'Dark2', name = 'Cluster') +
+  labs(x = "Minutes post-challenge", y = "Body temperature") +
+  scale_x_discrete(expand = c(0.03,0.03)) +
+  scale_y_continuous(breaks = seq(from = 26, to = 40, by = 2)) 
+
+pclust
+
+jpeg("figs/eda/trajectories-by-cluster.jpeg", width=700)
+pclust + big_theme
+dev.off()
+```
+
+
+### PCA
+
+Principle components analysis based on observed phenotypes (temp and symptom score): 
+
+```{r}
+pca_data <- WB02$pheno[,c("Temp_0min", "Temp_15min", "Temp_30min", "Temp_45min", 
+                          "Temp_60min", "Symptom_score")]
+pca <- prcomp(pca_data)
+
+pcaplot <- fviz_pca_ind(pca, habillage = WB02$pheno$cluster, geom="point", title = "", 
+                        addEllipses = TRUE, mean.point = FALSE, legend.title = 'Cluster') 
+pcaplot
+
+jpeg("figs/eda/pca-by-cluster.jpeg", width = 700)
+pcaplot + big_theme
+dev.off()
+
+pcaplot_pub <- fviz_pca_ind(pca, habillage = WB02$pheno$cluster, geom="point", title = "", 
+                        addEllipses = TRUE, mean.point = FALSE, pointsize = 1, legend.title = 'Cluster') 
+```
+
+No major outliers 
+
+
+### Summary statistics for temp trajectory 
+
+Note that in calculating derived measures, the individual mouse's baseline temperature was used rather than the average of all mice's baseline temp. This is because from challenges done on CC strains, we know there is a significant strain effect on baseline temp. This indicates that there is a strain effect on baseline temp, outside of measurement error. Since backcross mice are outbred and not the same strain, we cannot assume they will all have the same baseline temp. (If variation in baseline temp were due to measurement error, we would want to use the average baseline temp to calculate AAC). 
+
+See `temp_variation.R` for described analysis. 
+
+**Derived measure #1: Area above the curve**
+
+Based on time-series temperature data, plotted above. Calculated by subtracting the 
+area under the curve from the total area of the rectangle formed by x = 60 min and 
+y = Temp_0min[i] (the temp @ time 0 for the individual mouse). 
+
+Illustrate concept for manuscript: 
+
+```{r}
+x <- c(0,15,30,45,60) # Minutes post-challenge (x-axis)
+y1 <- dat$Temp[which(dat$mouse_ID == 'CR_WB02_F0005')]
+y2 <- rep(y1[1], length(y1))
+
+png("figs/supplemental/aac-illustration.png", width = 600)
+
+plot(x, y1, type = "l", xlab = "", ylab = "")
+title(xlab="Minutes post-exposure", cex.lab=1.5)
+title(ylab="Body temperature", line=2.5, cex.lab=1.5)
+legend(x=0, y=37.95, lty = c(1,2), legend = c('Temperature trajectory','Baseline temp'))
+polygon(c(x, rev(x)), c(y2, rev(y1)), col = "#6BD7AF", density=10, angle=45)
+lines(x, y1, lty=1)
+abline(h = y1[1], lty=2)
+
+dev.off()
+```
+
+
+```{r}
+WB02 <- calc_auc(cross = WB02, steps = x, col.name = "Temp_aac", phenos = phenos)
+plotPheno(WB02, pheno = 'Temp_aac')
+```
+
+**Derived measure #2: cluster**
+
+Binarize cluster for more powerful mapping. Group 1 vs groups 2/3 will probably be the only one with statistical power, because group 3 is so small. 
+
+Group 1 (no reaction) vs groups 2 and 3 (reaction):
+
+```{r}
+WB02$pheno$cluster_1vs23 <- ifelse(WB02$pheno$cluster == 1, 0, 1)
+```
+
+Ignoring group 1 (non-reactors), compare group 2 (recovery) vs group 3 (decline):
+
+```{r}
+WB02$pheno$cluster_2vs3 <- ifelse(WB02$pheno$cluster == 2, 0, ifelse(WB02$pheno$cluster == 3, 1, NA))
+```
+
+Group 1 or 2 (no reaction/recovery) vs group 3 (decline):
+
+```{r}
+WB02$pheno$cluster_12vs3 <- ifelse(WB02$pheno$cluster == 3, 1, 0)
+```
+
+
+### Correlation analysis
+
+Plot symptom score vs temperature:
+
+```{r}
+ssvstemp <- ggplot(data = WB02$pheno, mapping = aes(x = as.factor(Symptom_score), y = Temp_aac)) + 
+  geom_jitter(width = 0.15) + 
+  labs(x = 'Symptom Score', y = 'Temperature - area above the curve') 
+
+ssvstemp
+
+jpeg('figs/supplemental/temp-vs-symptomscore.jpeg', width=600)
+ssvstemp + big_theme
+dev.off()
+```
+
+Relationship between symptom score and temperature: 
+
+```{r}
+summary(aov(Temp_aac ~ Symptom_score, data = WB02$pheno)) 
+```
+
+
+Plot temp vs IgE (don't expect a large correlation):
+
+```{r}
+igevstemp <- ggplot(data = WB02$pheno, mapping = aes(x = PNsIgE, y = Temp_aac)) + 
+  geom_point() + 
+  labs(x = 'Post-sensitization PNsIgE', y = 'Temperature - area above the curve')
+
+igevstemp
+
+jpeg('figs/supplemental/temp-vs-IgE.jpeg', width=600)
+igevstemp + big_theme
+dev.off()
+```
+
+Correlation between temp and PNsIgE:
+
+```{r}
+cor.test(WB02$pheno$Temp_aac, WB02$pheno$PNsIgE)
+```
+
+
+### Phenotype means and ranges 
+
+In backcross mice: 
+
+```{r}
+print('Temp at 0 min')
+mean(WB02$pheno$Temp_0min)
+range(WB02$pheno$Temp_0min)
+print('Temp at 15 min')
+mean(WB02$pheno$Temp_15min)
+range(WB02$pheno$Temp_15min)
+print('Temp at 30 min')
+mean(WB02$pheno$Temp_30min)
+range(WB02$pheno$Temp_30min)
+print('Temp at 45 min')
+mean(WB02$pheno$Temp_45min)
+range(WB02$pheno$Temp_45min)
+print('Temp at 60 min')
+mean(WB02$pheno$Temp_60min)
+range(WB02$pheno$Temp_60min)
+
+print('IgE')
+mean(WB02$pheno$PNsIgE)
+range(WB02$pheno$PNsIgE)
+
+print('Symptom score')
+mean(WB02$pheno$Symptom_score)
+median(WB02$pheno$Symptom_score)
+range(WB02$pheno$Symptom_score)
+```
+
+--------------------------------------------------------------------------------
+### Parent data
+--------------------------------------------------------------------------------
+
+Load `parentdata` dataframe (with AAC / derived measures) and pparent plot  
+
+```{r}
+load('derived_data/other_Robjects/pparent.Rdata') # load pparent ggplot for Fig 1 
+parentdata <- read_csv('derived_data/parentdata.csv')
+```
+
+Brown-Forsythe test - robust test for equal variances, even when underlying data are not normally distributed (so not using transformed data)
+
+```{r}
+# get auc metric for parent mice
+parent_aac <- parentdata$Temp_aac 
+
+# get auc metric for bc mice
+bc_aac <- WB02$pheno$Temp_aac
+
+bfdat <- data.frame(aac = as.numeric(c(parent_aac, bc_aac)), 
+                    group = c(rep('parent', length(parent_aac)), rep('bc', length(bc_aac))))
+
+bf.test(aac ~ group, bfdat)
+```
+
+
+--------------------------------------------------------------------------------
+### Figure 1
+--------------------------------------------------------------------------------
+
+Histograms of symptom score and PNsIgE:
+
+```{r}
+symptomhist <- ggplot(data = raw_phenos, aes(x = Symptom_score)) + 
+  geom_histogram(binwidth = 0.5) + 
+  labs(x = 'Symptom Score\n', y = 'Count') +
+  pub_theme
+
+symptomhist
+```
+
+```{r}
+igehist <- ggplot(data = raw_phenos, aes(x = PNsIgE)) + 
+  geom_histogram(binwidth=2) + 
+  labs(x = "Post-sensitization \nPNsIgE (\U00B5g/mL)", y = 'Count') + 
+  pub_theme 
+
+igehist
+```
+
+Subpanels for trajectories of each cluster:
+
+```{r}
+dark2cols <- brewer.pal(n = 3, name = 'Dark2')
+
+bctemp_c1 <- ggplot(dat[dat$cluster == 1,], aes(x = Time, y = Temp)) +
+  geom_line(aes(group = mouse_ID), color = dark2cols[1], size=0.2) +
+  labs(x = "Minutes post-challenge", y = "Body temperature") +
+  scale_x_discrete(expand = c(0.03,0.03)) +
+  scale_y_continuous(breaks = seq(from = 26, to = 40, by = 2), limits = c(25,40)) +
+  pub_theme
+
+bctemp_c2 <- ggplot(dat[dat$cluster == 2,], aes(x = Time, y = Temp)) +
+  geom_line(aes(group = mouse_ID), color = dark2cols[2], size=0.2) +
+  labs(x = "Minutes post-challenge", y = "Body temperature") +
+  scale_x_discrete(expand = c(0.03,0.03)) +
+  scale_y_continuous(breaks = seq(from = 26, to = 40, by = 2), limits = c(25,40)) +
+  pub_theme
+
+bctemp_c3 <- ggplot(dat[dat$cluster == 3,], aes(x = Time, y = Temp)) +
+  geom_line(aes(group = mouse_ID), color = dark2cols[3], size=0.2) +
+  labs(x = "Minutes post-challenge", y = "Body temperature") +
+  scale_x_discrete(expand = c(0.03,0.03)) +
+  scale_y_continuous(breaks = seq(from = 26, to = 40, by = 2), limits = c(25,40)) +
+  pub_theme
+```
+
+Make Figure 1:
+
+```{r warning=FALSE}
+pparent_pub <- pparent + pub_theme
+pclust_pub <- pclust + pub_theme
+bctemp_pub <- bctemp + pub_theme
+#pcaplot_pub <- pcaplot_pub + pub_theme
+
+fig1 <- ggarrange(ggarrange(pparent_pub, pclust_pub, "", labels = c('A','B',''), 
+                            ncol = 3, widths = c(0.5,0.47,0.03)), 
+                  ggarrange(symptomhist, "", igehist, "", labels = c('C','','D',''), 
+                            ncol = 4, widths = c(0.4,0.1,0.4,0.1)), 
+                  nrow = 2)
+fig1
+
+ggsave('figs/fig1/Figure1.jpeg', fig1)
+```
+
+Version with subpanels showing clusters separately:
+
+```{r warning=FALSE}
+fig1v2 <- ggarrange(ggarrange(pparent_pub, pclust_pub, "", labels = c('A','B',''), 
+                              ncol = 3, widths = c(0.5,0.47,0.03)),
+                    ggarrange("", bctemp_c1, bctemp_c2, bctemp_c3, labels = c('C'), 
+                              ncol = 4, widths = c(0.03,0.3,0.3,0.3)),
+                    ggarrange(symptomhist, "", igehist, "", labels = c('D','','E',''), 
+                              ncol = 4, widths = c(0.4,0.1,0.4,0.1)), 
+                    nrow = 3, heights = c(0.35, 0.3, 0.35))
+fig1v2
+
+ggsave('figs/fig1/Figure1wSubpanels.jpeg', fig1v2, width=2200, height=2200, units = 'px')
+```
+
+
+
+
+--------------------------------------------------------------------------------
+## Covariate analysis/transformation
+--------------------------------------------------------------------------------
+
+Now that all summary statistics are calculated, import table with phenotype info:
+
+```{r}
+models <- read.csv("source_data/pnut_bc_models.csv")
+```
+
+Covariate analysis via ANOVA:
+
+```{r}
+for (i in 1:nrow(models)){
+  mod.type <- models$type[i]
+  
+  if (mod.type == 'normal'){
+    pheno <- models$colname[i]
+    f <- paste(pheno, "~ Batch*Cage")
+    df <- WB02$pheno
+    assign("aov", do.call("aov", list(as.formula(f), data = as.name("df"))))
+    print(paste("ANOVA results for ", pheno))
+    print(anova(aov)) 
+  }
+}
+```
+
+**Results**: For all temperature phenotypes, there is *at most* a significant batch effect, i.e. there is no cage effect on any temp phenotypes. There are nominally significant batch and batch*cage interaction effects for the symptom score phenotype (both categorical and binarized), and there is a nominally significant cage effect on the diarrhea phenotype. 
+
+
+
+### Transform data
+
+Save raw phenotypes:
+
+```{r}
+raw_phenos <- WB02$pheno
+```
+
+Transform all data that we will model using the default (normal) model. `bestNormalize` used to determine which transformation to use. 
+
+* Temp_0min is normal enough 
+* Temp_15min - TRINT 
+* Temp_30min - TRINT
+* Temp_45min - TRINT or standardized exp(x) - normality stats are v close
+* Temp_60min - TRINT or standardized exp(x) - normality stats are v close 
+* Temp_aac - TRINT
+* Min_Temp - categorical (no transformation)
+* Min_Temp_Time - categorical (no transformation)
+* Symptom score - categorical (no transformation)
+* Cluster - categorical / binary (no transformation)
+* PNsIgE - square root 
+
+
+```{r}
+for (i in 2:nrow(models)){ # don't transform Temp_0min
+  pheno <- models$colname[i]
+  if (pheno == 'PNsIgE'){
+    WB02$pheno[,pheno] <- sqrt(raw_phenos[,pheno])
+  } else if(models$type[i] == 'normal'){
+    WB02$pheno[,pheno] <- trint(raw_phenos[,pheno])
+  } # else do nothing 
+}
+```
+
+
+# Get residuals 
+
+Instead of performing the following linear mixed model for each phenotype at each marker:
+$$y_i = \mu + \beta_{geno}x_{geno,i} + bz_{b,i} + cz_{c,i} + \varepsilon_i$$
+where $b$ and $c$ are random effects representing cage and batch; perform the following linear mixed model for each phenotype:
+$$y_i = \mu + bz_{b,i} + cz_{c,i} + \varepsilon_i$$
+get the residuals from the fit ("de-BLUP") and use `scanone` on the residuals to produce the model.
+
+de-BLUP normal phenotypes (categorical/binary models do not assume normal residuals): 
+
+```{r}
+normal_phenos <- models$colname[which(models$type == 'normal')]
+batch <- WB02$pheno[,'Batch']
+cage <- WB02$pheno[,'Cage']
+
+for (i in 1:length(normal_phenos)){
+  colname <- normal_phenos[i]
+  pheno <- WB02$pheno[,colname]
+  formula <- paste0("pheno ~ ", ifelse(models$cov[i] == "", "", paste0(models$cov[i], " + ")), "(1|batch) + (1|batch:cage)")
+  fit <- lmer(pheno ~ (1|batch) + (1|batch:cage))
+  WB02$pheno[,colname] <- residuals(fit)
+}
+```
+
+
+
+
+--------------------------------------------------------------------------------
+# Heritability Estimation 
+--------------------------------------------------------------------------------
+
+Read genomic relationship matrix calculated with GCTA-GRM:
+
+```{r}
+grm <- readGRMBin(prefix = "heritability/plink-grm/pnut")
+
+# create genomic relationship matrix from diagonal and off-diagonal elements 
+G <- diag(grm$diag)
+G[upper.tri(G)] <- grm$off
+G[lower.tri(G)] <- t(G)[lower.tri(t(G))]
+rownames(G) <- grm$id$V1
+colnames(G) <- grm$id$V2
+```
+
+Estimate heritability:
+
+```{r}
+if(!file.exists('results/h2-estimates.csv')){ # if this code has not already run 
+  set.seed(123)
+  tbl1phenos <- colnames(WB02$pheno)[c(6:10,15:18,22,23)] # change to 6:10 to include Temp_0min
+  h2data <- data.frame(pheno = tbl1phenos,
+                     h2 = rep(NA, length(tbl1phenos)), 
+                     h2_lower = rep(NA, length(tbl1phenos)),
+                     h2_upper = rep(NA, length(tbl1phenos))) ### add 2 p-value columns 
+
+  # Manually estimate h2 for Temp_0min - not able to calculate confidence interval 
+  # with code below (prof table has non-distinct values in .sigmaprop)
+  mod1 <- relmatLmer(Temp_0min ~ (1|mouse_ID) + (1|Cage) + (1|Batch), data = WB02$pheno, relmat = list(mouse_ID = G))
+  ci <- confint(mod1)
+  h2data[1,2:4] <- c(VarProp(mod1)[1, 'prop'], ci[1,1], ci[1,2])
+  # calculate p-value using parametric bootstrap
+  # nullmod <- relmatLmer(Temp_0min ~ (1|Cage) + (1|Batch), data = WB02$pheno)
+  # lrt <- as.numeric(2*(logLik(mod1) - logLik(nullmod)))
+  # lrtstat <- numeric(1000)
+  # set.seed(123)
+  # for (i in 1:1000){
+  #   y <- unlist(simulate(nullmod))
+  #   ### this doesn't make sense, because Cage and Batch will be separated from their 
+  #   ### values and it won't mean anything to add them to the simulated values. 
+  #   bnull <- lm(y ~ (1|Cage) + (1|Batch)) 
+  #   balt <- relmatLmer(y ~ (1|Cage) + (1|Batch), WB02$pheno, REML = FALSE)
+  #   lrstat[i] <- as.numeric(2*(logLik(balt) - logLik(bnull)))
+  # }
+  
+  for (i in 2:nrow(h2data)){
+    pheno <- tbl1phenos[i]
+  
+    if (grepl('Temp', pheno) & (pheno != 'Temp_0min')){ # Temp phenotype, not baseline 
+      formula1 <- paste0(pheno, " ~ Temp_0min + (1|Cage) + (1|Batch) + (1|mouse_ID)")
+    } else {
+      formula1 <- paste0(pheno, " ~ (1|mouse_ID) + (1|Cage) + (1|Batch)")
+    }
+    formula2 <- paste0(pheno, " ~ (1|mouse_ID)") # model with just polygenic term for CIs
+  
+    mod1 <- relmatLmer(formula1, data = WB02$pheno, relmat = list(mouse_ID = G))
+    h2data[i,'h2'] <- VarProp(mod1)[1,'prop']
+  
+    mod2 <- relmatLmer(formula2, data = WB02$pheno, relmat = list(mouse_ID = G))
+    prof <- profile(mod2)
+    prof_prop <- varpropProf(prof)
+    h2data[i,'h2_lower'] <- confint(prof_prop)[1,1]
+    h2data[i,'h2_upper'] <- confint(prof_prop)[1,2]
+  }
+
+  write_csv(h2data, file = "results/h2-estimates.csv")
+} else { # code has already run 
+  h2data <- read_csv("results/h2-estimates.csv")
+}
+```
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Single-QTL Analysis 
+--------------------------------------------------------------------------------
+
+
+Covariates are batch and cage, modeled as random effects. Sex is not included as a covariate bc all mice are female. Covariates are only allowed for the normal and binary models. Use Temp_0min as covariate on Temp_15min, Temp_30min, Temp_45min, and Temp_60min. 
+
+## Models
+
+Model choice is as follows based on distribution of phenotypes:
+
+* Temp at all time points: normal
+* Delta temp at all time points: normal
+* Temperature aggregate/summary phenotypes: normal 
+* Minimum temperature: normal 
+* Time at minimum temperature: nonparametric (try POLR?)
+* Symptom score: nonparametric (try POLR?)
+* Symptom (binary): binary 
+* Diarrhea (binary): binary
+
+```{r}
+kable(models)
+```
+
+First run `calc.genoprob()`:
+
+```{r}
+WB02 <- calc.genoprob(WB02)
+WB02v2 <- convert2cross2(WB02)
+pr <- calc_genoprob(WB02v2, error_prob = 0.002, cores = 4)
+```
+
+Define covariate dataframe (include all phenotypes listed in `models$cov`, and `create_models` function will select only those listed for the phenotype):
+
+```{r}
+covar <- data.frame(Temp_0min = raw_phenos$Temp_0min)
+```
+
+Create models:
+
+```{r warning=FALSE}
+create_models(cross.obj = WB02, models = models, covar = covar, mod.dir = "derived_data/models/")
+```
+
+From Rqtl2: 
+
+```{r}
+# outT30 <- scan1(pr, WB02v2$pheno[,'Temp_30min'], addcovar = WB02v2$pheno[,'Temp_0min'])
+```
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+## Significance thresholds  
+--------------------------------------------------------------------------------
+
+Permutation tests for LOD thresholds 
+
+```{r}
+create_perms(cross.obj = WB02, models = models, covar = covar, 
+             perm.dir = "derived_data/perms/")
+```
+
+From Rqtl2:
+
+```{r}
+# operm <- scan1perm(pr, WB02v2$pheno, n_perm=1000, cores=10)
+# summary(operm, alpha = c(0.05, 0.10))
+```
+
+
+
+
+--------------------------------------------------------------------------------
+## Plot genome scans  
+--------------------------------------------------------------------------------
+
+Plot genome scans with 5% and 10% significance thresholds shown by solid and dashed lines, respectively. 
+
+```{r}
+plot_scans(models = models)
+```
+
+
+```{r}
+plot_scans(models = models[-which(models$obj == 'IgE'),], save = TRUE, save.dir = 'figs/scans/', ylim = c(0, 4.5))
+plot_scans(models = models[which(models$obj == 'IgE'),], save = TRUE, save.dir = 'figs/scans/')
+```
+
+
+### Plot scans that will be at the bottom of each figure with modified X-axis 
+
+Cluster scan with modified x-axis:
+
+```{r}
+png('figs/scans/cluster_1vs23_modX.png', width = 750)
+plot_modX(cluster_1vs23, alternate.chrid = TRUE, xlab = "", ylab = "", main = "Temperature trajectory cluster", cex.main = 2, cex.axis = 2, bandcol = "gray90", ylim = c(0, 4.5))
+title(ylab = "LOD", line = 2.5, cex.lab = 2)
+title(xlab = "Chromosome", cex.lab = 2.3, line = 3.7) # cex.lab was 2
+abline(h = summary(cluster_1vs23.p), lty=1:2)
+dev.off()
+```
+
+PNsIgE scan with modified x-axis:
+
+```{r}
+png('figs/scans/PNsIgE_modX.png', width = 750)
+plot_modX(IgE, alternate.chrid = TRUE, xlab = "", ylab = "", main = "Post-sensitization peanut-specific IgE (ug/mL)", cex.main = 2, cex.axis = 2, bandcol = "gray90")
+title(ylab = "LOD", line = 2.5, cex.lab = 2)
+title(xlab = "Chromosome", cex.lab = 2.3, line = 3.7) # cex.lab was 2
+abline(h = summary(IgE.p), lty=1:2)
+dev.off()
+```
+
+Symptom score scan with modified x-axis:
+
+```{r}
+png('figs/supplemental/other-qtl/symptom_score_modX.png', width = 750)
+plot_modX(sympScore, alternate.chrid = TRUE, xlab = "", ylab = "", main = "Symptom score", cex.main = 2, cex.axis = 2, bandcol = "gray90", ylim = c(0,4.5))
+title(ylab = "LOD", line = 2.5, cex.lab = 2)
+title(xlab = "Chromosome", cex.lab = 2.3, line = 3.7) # cex.lab was 2
+abline(h = summary(SympScore.p), lty=1:2)
+dev.off()
+```
+
+
+Rqtl2:
+
+```{r}
+# plot(outT30, WB02v2$gmap)
+# abline(h = summary(operm, alpha = c(0.05, 0.10))[,'Temp_30min'], lty=1:2)
+```
+
+
+
+
+--------------------------------------------------------------------------------
+## Significant QTLs
+--------------------------------------------------------------------------------
+
+Calculate 95% Bayes credible intervals for significant LOD peaks, and create a summary table with data for each LOD peak: marker, chromosome, position, LOD and positions of Bayes credible intervals.
+
+```{r}
+peaks <- doc_peaks(models)
+print(peaks)
+```
+
+Rqtl2:
+
+```{r}
+#find_peaks(out, map = WB02v2$gmap, threshold = 2.8, drop = 1.5)
+```
+
+
+### Table for manuscript 
+
+Turn into tibble for easier processing:
+
+```{r}
+peakstbl <- as_tibble(peaks) %>% arrange(factor(chr, levels = c('10', '5', '17', '6', '18', '20', '9', '11')))
+```
+
+
+### Adjusted P-values
+
+```{r message=FALSE}
+peakstbl$adj_pval <- rep(NA, nrow(peakstbl))
+
+for (i in 1:nrow(peakstbl)){
+  modname <- peakstbl$model[i]
+  #permname <- models$perm.obj[which(models$obj == modname)]
+  chr <- peakstbl$chr[i]
+  
+  gevname <- paste0(models$perm.obj[which(models$obj == modname)], '.gev')
+  fitgev.sum <- summary.fevd(get(gevname))
+  
+  p <- pevd(q = as.numeric(peakstbl$lod[i]), 
+            loc = fitgev.sum$par[1], 
+            scale = fitgev.sum$par[2], 
+            shape = fitgev.sum$par[3], 
+            lower.tail = FALSE)
+  
+  # p <- mean(get(permname) > summary(get(modname))[as.integer(chr),'lod'])
+  
+  peakstbl$adj_pval[i] <- p
+}
+
+
+peakstbl$adj_pval <- trimws(format(peakstbl$adj_pval, digits=2))
+peakstbl$adj_pval <- as.numeric(format(peakstbl$adj_pval, digits = 3))
+```
+
+
+### Genomic location 
+
+Create chr:position(interval) column. First, split up bayes CI column into lower and upper limit. Then concatenate various data to produce column:
+
+```{r}
+peakstbl$BayesCIlower <- rep(NA, nrow(peakstbl))
+peakstbl$BayesCIupper <- rep(NA, nrow(peakstbl))
+
+for (i in 1:nrow(peakstbl)){
+  peakstbl$BayesCIlower[i] <- strsplit(peakstbl$`Bayes CI`[i], split = ' - ')[[1]][1]
+  peakstbl$BayesCIupper[i] <- strsplit(peakstbl$`Bayes CI`[i], split = ' - ')[[1]][2]
+}
+
+# Then concatenate  
+peakstbl$chrint <- paste0(rep('Chr ',nrow(peakstbl)), 
+                 peakstbl$chr, 
+                 rep(': ',nrow(peakstbl)),
+                 trimws(format(round(as.double(peakstbl$pos), 2), nsmall=2)),
+                 rep(' (',nrow(peakstbl)),
+                 trimws(format(round(as.double(peakstbl$BayesCIlower), 2), nsmall=2)),
+                 rep('-',nrow(peakstbl)),
+                 trimws(format(round(as.double(peakstbl$BayesCIupper), 2), nsmall=2)),
+                 rep(')',nrow(peakstbl)))
+```
+
+Use phenotype name instead of model name: 
+
+```{r}
+peakstbl$Phenotype <- models$name[match(peakstbl$model, models$obj)]
+```
+
+
+### Unadjusted P-values 
+
+```{r}
+peakstbl$unadj_pval <- rep(NA, nrow(peakstbl))
+
+for (i in 1:nrow(peakstbl)){
+  marker = peakstbl$marker[i]
+  mod = peakstbl$model[i]
+  pheno.col = models$colname[models$obj == mod]
+  covar <- models$cov[models$obj == mod]
+  if (covar == "") {covar <- NULL}
+  
+  unadj.pval <- get_unadj_pval(WB02, pheno.col, marker, covar)
+  peakstbl$unadj_pval[i] <- unadj.pval
+}
+
+peakstbl$unadj_pval <- format(peakstbl$unadj_pval, digits = 3)
+```
+
+
+### QTL names 
+
+```{r}
+peakstbl$QTL <- rep(NA, nrow(peakstbl))
+
+qtl_pheno_counts <- peakstbl %>% group_by(chr) %>% dplyr::summarize(n = n())
+
+peakstbl$QTL <- c(rep('Qpa1', qtl_pheno_counts$n[qtl_pheno_counts$chr==10]),
+                  rep('Qpa2', qtl_pheno_counts$n[qtl_pheno_counts$chr==5]), 
+                  rep('Qpa3', qtl_pheno_counts$n[qtl_pheno_counts$chr==17]), 
+                  rep('Qpa4', qtl_pheno_counts$n[qtl_pheno_counts$chr==6]),
+                  rep('Qpa5', qtl_pheno_counts$n[qtl_pheno_counts$chr==18]), 
+                  rep('Qpa6', qtl_pheno_counts$n[qtl_pheno_counts$chr==20]), 
+                  rep('Qpa7', qtl_pheno_counts$n[qtl_pheno_counts$chr==9]),
+                  rep('Qpa8', qtl_pheno_counts$n[qtl_pheno_counts$chr==11]))
+```
+
+
+### Phenotypic variance explained
+
+AKA heritability due to a QTL. Using formula (described in Rqtl guide pg 122)
+
+$$h^2 = \frac{\text{var}\{E(y|g\}}{\text{var}\{y\}}$$
+
+For backcross: 
+
+$$h^2 = \frac{a^2}{a^2 + 4\sigma^2}$$
+
+where $a = \mu_{AB} - \mu_{AA}$ and $\sigma^2$ is the residual variance. 
+
+```{r}
+peakstbl$phenotypic.var.expl <- rep(NA, nrow(peakstbl))
+
+for (i in 1:nrow(peakstbl)){
+  marker = peakstbl$marker[i]
+  mod = peakstbl$model[i]
+  pheno.col = models$colname[models$obj == mod]
+  covar <- models$cov[models$obj == mod]
+  if (covar == "") {covar <- NULL}
+  
+  h2 <- get_var_expl(WB02, pheno.col, marker, covar)
+  
+  peakstbl$phenotypic.var.expl[i] <- h2
+}
+
+peakstbl$phenotypic.var.expl <- paste0(as.numeric(format(peakstbl$phenotypic.var.expl, digits=3))*100, '%')
+```
+
+
+
+Analysis done, format and print
+--------------------------------------------------------------------------------
+
+
+Remove redundant data, re-order: 
+
+```{r}
+peakstbl <- peakstbl %>% 
+  arrange(match(chr, c('10', '5', '17', '6', '18', '20', '9', '11')), as.numeric(adj_pval))
+
+# now that it's sorted by adjusted p-value, add */**/*** (makes it a string so can't sort)
+peakstbl$adj_pval <- paste(peakstbl$adj_pval, ifelse(peakstbl$adj_pval < 0.005, '(***)', ifelse(peakstbl$adj_pval < 0.05, '(**)', ifelse(peakstbl$adj_pval < 0.10, '(*)', NA))))
+
+col_order <- c('QTL', 'Phenotype', 'chrint', 'adj_pval', 'phenotypic.var.expl')
+peakstbl <- peakstbl[,col_order]
+```
+
+Save to csv: 
+
+```{r}
+write.csv(peakstbl, file = "results/QTLsummary.csv", row.names = FALSE)
+```
+
+
+
+
+
+### Variance explained by Qpa1 and Qpa2 
+
+Of temp-aac (most holistic measure of response)
+
+```{r}
+WB02i <- fill.geno(WB02)
+qpa1geno <- pull.geno(WB02i, chr = 10)[,'S2T100225813'] # chr10 marker most significantly associated with aac
+qpa2geno <- pull.geno(WB02i, chr = 5)[,'gUNC9726629'] # chr5 marker most significantly associated with aac
+pheno <- WB02i$pheno$Temp_aac
+
+lmod <- lm(pheno ~ WB02i$pheno$Temp_0min + qpa1geno + qpa2geno)
+summary(lmod)
+
+# heritability calculation
+sigma2 <- summary(lmod)$sigma^2
+uAA1 <- mean(pheno[which(qpa1geno == 1)]) # 1 = AA
+uAB1 <- mean(pheno[which(qpa1geno == 2)]) # 2 = AB 
+a1 <- uAB1 - uAA1 
+uAA2 <- mean(pheno[which(qpa2geno == 1)]) # 1 = AA
+uAB2 <- mean(pheno[which(qpa2geno == 2)]) # 2 = AB 
+a2 <- uAB2 - uAA2 
+
+h2 <- (a1^2 + a2^2) / (a1^2 + a2^2 + 4*sigma2)
+print(h2)
+```
+
+### Variance explained by Qpa1-3
+
+Of temp-aac (most holistic measure of response)
+
+```{r}
+WB02i <- fill.geno(WB02)
+qpa1geno <- pull.geno(WB02i, chr = 10)[,'S2T100225813'] # chr10 marker most significantly associated with aac
+qpa2geno <- pull.geno(WB02i, chr = 5)[,'gUNC9726629'] # chr5 marker most significantly associated with aac
+qpa3geno <- pull.geno(WB02i, chr = 17)[,'gUNC27787813'] # chr17 marker most significantly associated with T30 (not associated with aac)
+pheno <- WB02i$pheno$Temp_aac
+
+lmod <- lm(pheno ~ WB02i$pheno$Temp_0min + qpa1geno + qpa2geno + qpa3geno)
+summary(lmod)
+
+# heritability calculation
+sigma2 <- summary(lmod)$sigma^2
+uAA1 <- mean(pheno[which(qpa1geno == 1)]) # 1 = AA
+uAB1 <- mean(pheno[which(qpa1geno == 2)]) # 2 = AB 
+a1 <- uAB1 - uAA1 
+uAA2 <- mean(pheno[which(qpa2geno == 1)]) # 1 = AA
+uAB2 <- mean(pheno[which(qpa2geno == 2)]) # 2 = AB 
+a2 <- uAB2 - uAA2 
+uAA3 <- mean(pheno[which(qpa3geno == 1)]) # 1 = AA
+uAB3 <- mean(pheno[which(qpa3geno == 2)]) # 2 = AB 
+a3 <- uAB3 - uAA3 
+h2 <- (a1^2 + a2^2 + a3^2) / (a1^2 + a2^2 +a3^2 + 4*sigma2)
+print(h2)
+```
+
+
+
+
+
+### Variance explained by Qpa5 and Qpa6 
+
+*Rename to Qpa7 and Qpa8* 
+Of PNsIgE
+
+```{r}
+qpa7geno <- pull.geno(WB02, chr = 9)[,'mbackupUNC090355700'] 
+qpa8geno <- pull.geno(WB02, chr = 11)[,'S3C111805292'] 
+pheno <- WB02$pheno$PNsIgE
+
+lmod <- lm(pheno ~ qpa7geno*qpa8geno)
+summary(lmod)
+
+# heritability calculation
+sigma2 <- summary(lmod)$sigma^2
+uAA1 <- mean(pheno[which(qpa7geno == 1)]) # 1 = AA
+uAB1 <- mean(pheno[which(qpa7geno == 2)]) # 2 = AB 
+a1 <- uAB1 - uAA1 
+uAA2 <- mean(pheno[which(qpa8geno == 1)]) # 1 = AA
+uAB2 <- mean(pheno[which(qpa8geno == 2)]) # 2 = AB 
+a2 <- uAB2 - uAA2 
+h2 <- (a1^2 + a2^2) / (a1^2 + a2^2 + 4*sigma2)
+print(h2)
+```
+
+
+### Variance explained using `fit.qtl` (for AAC):
+
+```{r}
+WB02 <- sim.geno(WB02)
+
+qtls <- makeqtl(WB02, chr = c(10, 5, 17, 6, 18, 'X'), 
+               pos = c(28.39, 62, 32.81, 129.82, 89.55, 108.94),
+               qtl.name = c('Qpa1', 'Qpa2', 'Qpa3', 'Qpa4', 'Qpa5', 'Qpa6'))
+
+plot(qtls) # how to get Qpa8 to show up on chrX?
+
+out.fq <- fitqtl(WB02, qtl = qtls, formula = Temp_aac ~ Q1 + Q2 + Q3 + Q4 + Q5 + Q6)
+summary(out.fq)
+```
+
+
+
+
+--------------------------------------------------------------------------------
+### Phenotype x genotype plots 
+--------------------------------------------------------------------------------
+
+Plot PxG plots for all significant LOD peaks
+
+```{r}
+qtl.map <- data.frame(chr = c(10, 5, 17, 6, 18, 'X', 9, 11), qtl_name = paste0('Qpa', seq(1,8)))
+plot_pxg(cross.obj = WB02, raw.data = raw_phenos, geno.map = list(A = "CC027", B = "C3H"),
+         qtl.map = qtl.map, peaks = peaks, plot.type = 'pxg', theme = rmd_theme)
+```
+
+Save PxG plots 
+
+```{r}
+plot_pxg(cross.obj = WB02, raw.data = raw_phenos, geno.map = list(A = "CC027", B = "C3H"),
+         qtl.map = qtl.map, peaks = peaks, plot.type = 'pxg', theme = big_pxg_theme,
+         save = TRUE, save.dir = 'figs/pxg/')
+
+plot_pxg(cross.obj = WB02, raw.data = raw_phenos, geno.map = list(A = "CC027", B = "C3H"),
+         qtl.map = qtl.map, peaks = peaks, plot.type = 'pxg', theme = big_pxg_theme, ylim = c(27,40), 
+         save = TRUE, save.dir = 'figs/pxg/same_ylim/')
+```
+
+
+Rqtl2:
+
+```{r}
+# g <- maxmarg(pr, WB02v2$gmap, chr = 17, pos = 35.553722, return_char = TRUE)
+# qtl2::plot_pxg(g, WB02v2$pheno[,'Temp_30min'], ylab = "Temp @ 30 min")
+```
+
+
+-----------------------
+All chunks up to this point run for `backcross.Rdata`
+-----------------------
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+### Extra PNsIgE peak analysis 
+--------------------------------------------------------------------------------
+
+Confirm that chr9 and chr11 QTL (associated with PNsIgE) are not associated with any response phenotype:
+
+```{r}
+chr9m <- 'mbackupUNC090355700'
+
+resp_phenos <- c('Temp_15min', 'Temp_30min', 'Temp_45min', 'Temp_60min',
+                 'Min_Temp', 'Min_Temp_Time', 'Temp_aac', 'Symptom_score')
+chr9m_lods <- c(T15[chr9m,'lod'], T30[chr9m,'lod'], T45[chr9m,'lod'], 
+                T60[chr9m, 'lod'], minTemp[chr9m, 'lod'], minTempTime[chr9m, 'lod'], 
+                sympScore[chr9m, 'lod'], Taac[chr9m, 'lod'])
+
+chr9m_assoc <- data.frame(phenos = resp_phenos, 
+                          lods = chr9m_lods, 
+                          unadj_pval = rep(NA, length(chr9m_lods)))
+
+
+for (i in 1:length(resp_phenos)){
+  if (resp_phenos[i] == 'Symptom_score'){
+    chr9m_assoc$unadj_pval[i] <- get_unadj_pval(WB02, pheno.col = resp_phenos[i],
+                                           marker = chr9m)
+  } else {
+    chr9m_assoc$unadj_pval[i] <- get_unadj_pval(WB02, pheno.col = resp_phenos[i],
+                                           marker = chr9m, covar = 'Temp_0min')
+  }
+}
+```
+
+
+```{r}
+chr11m <- 'S3C111805292'
+
+chr11m_lods <- c(T15[chr11m,'lod'], T30[chr11m,'lod'], T45[chr11m,'lod'], 
+                T60[chr11m, 'lod'], minTemp[chr11m, 'lod'], 
+                minTempTime[chr11m, 'lod'], 
+                sympScore[chr11m, 'lod'], Taac[chr11m, 'lod'])
+
+chr11m_assoc <- data.frame(phenos = resp_phenos, 
+                          lods = chr11m_lods, 
+                          unadj_pval = rep(NA, length(chr11m_lods)))
+
+
+for (i in 1:length(resp_phenos)){
+  if (resp_phenos[i] == 'Symptom_score'){
+    chr11m_assoc$unadj_pval[i] <- get_unadj_pval(WB02, pheno.col = resp_phenos[i],
+                                           marker = chr11m)
+  } else {
+    chr11m_assoc$unadj_pval[i] <- get_unadj_pval(WB02, pheno.col = resp_phenos[i],
+                                           marker = chr11m, covar = 'Temp_0min')
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Multiple QTL Analysis 
+--------------------------------------------------------------------------------
+
+marker genotypes from temp scans: 
+
+```{r}
+m5 <- 'UNC9309125' # chr5 marker from cluster scan
+m10 <- 'UNC17654311' # chr10 marker from temp @ 15 min scan 
+m17 <- 'S6Y171422147' # chr17 marker from temp @ 45 min scan 
+mX <- 'SXX204357509' # chrX marker from temp @ 45 min scan 
+m18 <- 'gUNC29817480' # chr18 marker from min temp scan 
+m6 <- 'mbackupUNC060210105' # chr6 marker from time of min temp scan 
+
+m5_genos <- pull.geno(WB02, 5)[,m5] 
+m10_genos <- pull.geno(WB02, 10)[,m10] 
+m17_genos <- pull.geno(WB02, 17)[,m17]
+mX_genos <- pull.geno(WB02,'X')[,mX]
+m18_genos <- pull.geno(WB02, 18)[,m18]
+m6_genos <- pull.geno(WB02, 6)[,m6]
+```
+
+**Variable selection**
+
+Via stepwise ANOVA
+
+```{r}
+temp_aac <- pull.pheno(WB02, pheno.col = 'Temp_aac')
+n <- length(temp_aac)
+t0 <- pull.pheno(WB02, pheno.col = 'Temp_0min')
+
+full_mod <- lm(temp_aac ~ t0 + m5_genos + m10_genos + m17_genos + mX_genos + m18_genos + m6_genos)
+```
+
+Stepwise regression 
+
+```{r}
+step_mod <- stepAIC(full_mod, direction = "both", trace = TRUE, k = log(n))
+```
+
+
+
+Is Qpa1*Qpa2 interaction significant? 
+
+```{r}
+mod1 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + m6_genos)
+mod6 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + m6_genos + m10_genos*m5_genos)
+anova(mod6, mod1)
+```
+
+*No*, interaction is not significant. 
+
+So all QTL except for the one on chr6 is our best model (with AAC as the outcome). 
+
+Does PNsIgE improve this model?
+
+```{r}
+ige_pheno <- pull.pheno(WB02, pheno.col = 'PNsIgE')
+
+modwIgE <- lm(temp_aac ~ t0 + m5_genos + m10_genos + m17_genos + mX_genos + m18_genos + ige_pheno)
+anova(modwIgE, step_mod)
+```
+
+*Yes.* 
+
+Do PNsIgE QTL improve model?
+
+Qpa7:
+
+```{r}
+qpa7geno <- pull.geno(WB02, chr = 9)[,'mbackupUNC090355700']
+modwQpa7 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + ige_pheno + qpa7geno)
+anova(modwIgE, modwQpa7)
+```
+
+Qpa8: 
+
+```{r}
+qpa8geno <- pull.geno(WB02, chr = 11)[,'S3C111805292']
+modwQpa8 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + ige_pheno + qpa8geno)
+anova(modwIgE, modwQpa8)
+```
+
+
+The chr6 QTL (Qpa4) is associated with time of minimum temp. Are we sure the info captured by that phenotype is also captured in AAC (i.e. is AAC a representative phenotype for time of minimum temp)?
+
+```{r}
+outcome_phenos <- c('Temp_15min', 'Temp_30min', 'Temp_45min', 'Temp_60min', 'Min_Temp', 'Min_Temp_Time', 'cluster', 'Temp_aac', 'Symptom_score')
+outcome_pca <- prcomp(WB02$pheno[,outcome_phenos], center = TRUE, scale = TRUE)
+
+
+png('figs/supplemental/outcome-pca.png')
+fviz_pca_var(outcome_pca, repel = TRUE)
+dev.off()
+#ggsave(filename = 'figs/supplemental/outcome-pca.jpeg')
+
+png('figs/vars/scree-plot.png', width = 600)
+fviz_screeplot(outcome_pca)
+dev.off()
+```
+
+Min_Temp_Time appears to be capturing different information, so we probably still believe Qpa4. 
+
+Run PCA without Min_Temp_Time:
+
+```{r}
+outcome_phenos.mtt <- c('Temp_15min', 'Temp_30min', 'Temp_45min', 'Temp_60min', 'Min_Temp', 'cluster', 'Temp_aac', 'Symptom_score')
+outcome_pca.mtt <- prcomp(WB02$pheno[,outcome_phenos.mtt], center = TRUE, scale = TRUE)
+
+png('figs/supplemental/outcome-pca-mtt.png')
+fviz_pca_var(outcome_pca.mtt, repel = TRUE)
+dev.off()
+
+png('figs/vars/screeplot-mtt.png')
+fviz_screeplot(outcome_pca.mtt)
+dev.off()
+```
+
+Try factor analysis:
+
+```{r}
+ggsave('figs/vars/scree-plot.jpeg')
+```
+
+Clear elbow at 1, so try with 1 factor:
+
+```{r}
+temp_phenos <- c('Temp_15min', 'Temp_30min', 'Temp_45min', 'Temp_60min', 'Min_Temp', 'Min_Temp_Time', 'cluster', 'Temp_aac')
+fa1 <- factanal(WB02$pheno[,temp_phenos], factors = 1)
+fa1
+```
+
+Min_Temp_Time and Temp_0min have high uniqueness and are not strongly associated with Factor 1. 
+
+Taken together, we believe that Min_Temp_Time is capturing different info from Temp-AAC, so we still believe Qpa4. 
+
+**Verify that markers are ok**
+
+
+
+
+
+
+
+
+
+
+
+
+### Do Qpa1 (chr10) and Qpa2 (chr5) interact or effect phenotype additively?
+
+**Temp @ 15min** 
+
+Plot temp at 15 min vs *Qpa1* genotype, colored by *Qpa2* genotype:
+
+```{r}
+pcolbym <- pxg_colbym(cross = WB02, pheno = raw_phenos$Temp_15min, marker = 'UNC17654311',
+           marker2 = 'UNC9309125', geno.map = list(A = "CC027", B = "C3H"), 
+           xlab = bquote(italic(Qpa1)~Genotype), ylab = 'Temp at 15 min', title = "", type = 'boxplot',
+           theme = poster_theme)
+
+pcolbym <- pcolbym + labs(fill = bquote(italic(Qpa2)~Genotype)) # use with type = 'boxplot'
+#pcolbym <- pcolbym + labs(col = bquote(italic(Qpa2)~Genotype)) # use with type = 'scatter'
+
+#jpeg('figs/multi-qtl/T15-Qpa1-Qpa2-boxplot.jpeg', width=650)
+pcolbym
+#dev.off()
+```
+
+T-test to compare Qpa2:CC027/CC027 mice to Qpa2:CC027/C3H mice among Qpa1:CC027/CC027 mice: 
+
+```{r}
+temp_15min <- WB02$pheno$Temp_15min
+temp_15min_Qpa1hom <- temp_15min[which(m10_genos==1)] # homozygotes at Qpa1
+m5_genos_Qpa1hom <- m5_genos[which(m10_genos==1)]
+t.test(temp_15min_Qpa1hom ~ m5_genos_Qpa1hom)
+```
+
+T-test to compare Qpa1:CC027/CC027 mice to Qpa1:CC027/C3H mice among Qpa2:CC027/CC027 mice: 
+
+```{r}
+temp_15min_Qpa2hom <- temp_15min[which(m5_genos==1)] # homozygotes at Qpa2
+m10_genos_Qpa2hom <- m10_genos[which(m5_genos==1)]
+t.test(temp_15min_Qpa2hom ~ m10_genos_Qpa2hom)
+```
+
+T-test to compare mice that are homozygous at one allele and het at the other (should be the same): 
+
+```{r}
+temp_15min_Qpa1homQpa2het <- temp_15min[which((m10_genos == 1) & (m5_genos == 2))]
+temp_15min_Qpa1hetQpa2hom <- temp_15min[which((m10_genos == 2) & (m5_genos == 1))]
+t.test(temp_15min_Qpa1homQpa2het, temp_15min_Qpa1hetQpa2hom)
+```
+
+T-test to compare Qpa1:CC027/CC027 mice to Qpa1:CC027/C3H mice among Qpa2:CC027/C3H mice: 
+
+```{r}
+temp_15min_Qpa2het <- temp_15min[which(m5_genos==2)] # hets at Qpa2
+m10_genos_Qpa2het <- m10_genos[which(m5_genos==2)]
+t.test(temp_15min_Qpa2het ~ m10_genos_Qpa2het)
+```
+
+T-test to compare Qpa2:CC027/CC027 mice to Qpa2:CC027/C3H mice among Qpa1:CC027/C3H mice: 
+
+```{r}
+temp_15min_Qpa1het <- temp_15min[which(m10_genos==2)] # hets at Qpa1
+m5_genos_Qpa1het <- m5_genos[which(m10_genos==2)]
+t.test(temp_15min_Qpa1het ~ m5_genos_Qpa1het)
+```
+
+
+
+
+
+**Temp - AAC**
+
+Plot temp AAC vs *Qpa1* genotype, colored by *Qpa2* genotype:
+
+```{r}
+pcolbymaac <- pxg_colbym(cross = WB02, pheno = WB02$pheno$Temp_aac, marker = 'UNC17654311',
+           marker2 = 'UNC9309125', geno.map = list(A = "CC027", B = "C3H"), 
+           xlab = bquote(italic(Qpa1)~Genotype), ylab = 'Temp - AAC (normalized)', title = "", 
+           type = 'boxplot', theme = poster_theme)
+
+pcolbymaac <- pcolbymaac + 
+  scale_color_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype))
+#pcolbymaac <- pcolbymaac + labs(col = bquote(italic(Qpa2)~Genotype)) # use with type = 'scatter'
+
+#jpeg('figs/multi-qtl/Taac-Qpa1-Qpa2-boxplot.jpeg', width=650)
+pcolbymaac
+#dev.off()
+```
+
+T-test to compare Qpa2:CC027/CC027 mice to Qpa2:CC027/C3H mice among Qpa1:CC027/CC027 mice: 
+
+```{r}
+temp_aac <- WB02$pheno$Temp_aac
+temp_aac_Qpa1hom <- temp_aac[which(m10_genos==1)] # AAC pheno for homozygotes at Qpa1
+m5_genos_Qpa1hom <- m5_genos[which(m10_genos==1)] # Qpa2 genotype for homozygotes at Qpa1 
+t.test(temp_aac_Qpa1hom ~ m5_genos_Qpa1hom) 
+```
+
+T-test to compare Qpa1:CC027/CC027 mice to Qpa1:CC027/C3H mice among Qpa2:CC027/CC027 mice: 
+
+```{r}
+temp_aac_Qpa2hom <- temp_aac[which(m5_genos==1)] # AAC pheno for homozygotes at Qpa2
+m10_genos_Qpa2hom <- m10_genos[which(m5_genos==1)] # Qpa1 genos for homozygotes at Qpa2 
+t.test(temp_aac_Qpa2hom ~ m10_genos_Qpa2hom)
+```
+
+T-test to compare mice that are homozygous at one allele and het at the other (should be the same): 
+
+```{r}
+temp_aac_Qpa1homQpa2het <- temp_aac[which((m10_genos == 1) & (m5_genos == 2))]
+temp_aac_Qpa1hetQpa2hom <- temp_aac[which((m10_genos == 2) & (m5_genos == 1))]
+t.test(temp_aac_Qpa1homQpa2het, temp_aac_Qpa1hetQpa2hom)
+```
+
+T-test to compare Qpa1:CC027/CC027 mice to Qpa1:CC027/C3H mice among Qpa2:CC027/C3H mice: 
+
+```{r}
+temp_aac_Qpa2het <- temp_aac[which(m5_genos==2)] # AAC pheno for hets at Qpa2
+m10_genos_Qpa2het <- m10_genos[which(m5_genos==2)] # Qpa1 geno for hets at Qpa2 
+t.test(temp_aac_Qpa2het ~ m10_genos_Qpa2het)
+```
+
+T-test to compare Qpa2:CC027/CC027 mice to Qpa2:CC027/C3H mice among Qpa1:CC027/C3H mice: 
+
+```{r}
+temp_aac_Qpa1het <- temp_aac[which(m10_genos==2)] # AAC pheno for hets at Qpa1
+m5_genos_Qpa1het <- m5_genos[which(m10_genos==2)] # Qpa2 geno for hets at Qpa1 
+t.test(temp_aac_Qpa1het ~ m5_genos_Qpa1het)
+```
+
+
+
+
+Boxplot with significance bars:
+
+```{r}
+marker.genos <- WB02i$geno[[10]]$data[,'UNC17654311']
+marker2.genos <- WB02i$geno[[5]]$data[,'UNC9309125']
+  
+df <- data.frame(geno = marker.genos,
+                 geno2 = marker2.genos,
+                 pheno = WB02$pheno$Temp_aac)
+
+geno.labels = c("CC027/CC027", "CC027/C3H")
+  
+# map genotypes to genotype labels                 
+df$geno <- mapvalues(df$geno, from = c(1,2), to = geno.labels)
+df$geno2 <- mapvalues(df$geno2, from = c(1,2), to = geno.labels)
+  
+df$geno <- factor(df$geno, levels = geno.labels)
+df$geno2 <- factor(df$geno2, levels = geno.labels)
+
+jpeg("figs/multi-qtl/Qpa1Qpa2wsig.jpeg", width = 650)
+ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
+     geom_boxplot() +
+     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
+     geom_signif(annotation = "*", y_position = 2.5, xmin = 0.813, xmax = 1.185, tip_length = 0, textsize = 9) +
+     geom_signif(annotation = "*", y_position = 3.2, xmin = 0.813, xmax = 1.81, tip_length = 0, textsize = 9) +
+     geom_signif(annotation = "*", y_position = 1.8, xmin = 1.81, xmax = 2.188, tip_length = 0, textsize = 9) +
+     geom_signif(annotation = "*", y_position = 2.8, xmin = 1.185, xmax = 2.188, tip_length = 0, textsize = 9) +
+     labs(y = "Temp AAC (normalized)", x = bquote(italic(Qpa1)~Genotype)) +
+     poster_theme
+dev.off()
+
+
+jpeg("figs/multi-qtl/Qpa1Qpa2wsig_v2.jpeg", width = 650)
+ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
+     geom_boxplot() +
+     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
+     geom_signif(annotation = "*", y_position = 2.5, xmin = 0.813, xmax = 1.185, tip_length = 0.01, textsize = 7) +
+     geom_signif(annotation = "*", y_position = 3.1, xmin = 0.813, xmax = 1.81, tip_length = 0.01, textsize = 7) +
+     geom_signif(annotation = "*", y_position = 1.8, xmin = 1.81, xmax = 2.188, tip_length = 0.01, textsize = 7) +
+     geom_signif(annotation = "*", y_position = 2.7, xmin = 1.185, xmax = 2.188, tip_length = 0.01, textsize = 7) +
+     labs(y = "Temp AAC (normalized)", x = bquote(italic(Qpa1)~Genotype)) +
+     poster_theme
+dev.off()
+
+
+jpeg("figs/multi-qtl/Qpa1Qpa2.jpeg", width = 650, height = 450)
+ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
+     geom_boxplot() +
+     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
+     labs(y = "Temp AAC", x = bquote(italic(Qpa1)~Genotype)) +
+     poster_theme
+dev.off()
+```
+
+
+
+
+
+
+
+## Regress on number of CC027 alleles 
+
+Calculate number of CC027 alleles: 
+
+Coded as 1 = CC027/CC027 and 2 = CC027/C3H 
+Recode m5 and m10 as 1 = CC027/C3H and 2 = CC027/CC027 (= number of CC027 alleles) 
+and sum 
+
+```{r}
+# Qpa1
+m10_numCC027 <- vector(length = length(m10_genos))
+m10_numCC027[m10_genos == 1] <- 2
+m10_numCC027[m10_genos == 2] <- 1
+
+# Qpa2
+m5_numCC027 <- vector(length = length(m5_genos))
+m5_numCC027[m5_genos == 1] <- 2
+m5_numCC027[m5_genos == 2] <- 1
+
+numCC027 <- m10_numCC027 + m5_numCC027
+```
+
+Regress on number of CC027 alleles:
+
+```{r}
+fit <- lm(WB02$pheno$Temp_aac ~ numCC027)
+summary(fit)
+```
+
+
+
+## Chr 5/10 haplotype vs cluster 
+
+Plot chr 5/10 haplotype vs cluster
+
+```{r}
+m5m10df <- data.frame(m5.geno = m5_genos, 
+                      m10.geno = m10_genos, 
+                      cluster = pull.pheno(WB02, 'cluster'))
+
+datasum <- m5m10df %>% 
+  group_by(m5.geno, m10.geno, cluster) %>% 
+  dplyr::summarise(n = n())
+
+m5m10df$m5m10 <- paste0(m5m10df$m5.geno, "-", m5m10df$m10.geno)
+
+#jpeg("figs/epistasis/m5m10cluster.jpeg", width=600)
+ggplot(data = m5m10df, mapping = aes(x = m5m10, y = cluster)) + 
+  geom_jitter(width = 0.2, height = 0.2) +
+  scale_y_discrete(limits = c("1", "2", "3")) +
+  scale_x_discrete(labels = c("1-1" = "Chr5:CC027/CC027\nChr10:CC027/CC027",
+                              "1-2" = "Chr5:CC027/CC027\nChr10:CC027/C3H",
+                              "2-1" = "Chr5:CC027/C3H\nChr10:CC027/CC027",
+                              "2-2" = "Chr5:CC027/C3H\nChr10:CC027/C3H")) +
+  xlab("Genotype") +
+  rmd_theme
+#dev.off()
+```
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Contingency table test 
+--------------------------------------------------------------------------------
+
+Two-way contingency table: overall genotype vs cluster 
+
+```{r}
+datasum2way <- m5m10df %>% 
+  group_by(m5m10, cluster) %>% 
+  dplyr::summarise(n = n())
+
+# 2-way table, poisson model 
+mod2p <- glm(n ~ m5m10*cluster, datasum2way, family = 'poisson')
+
+```
+
+Three-way contingency table: chr 5 genotype, chr 10 genotype, cluster 
+
+`datasum` is our contingency table
+
+```{r}
+modu <- glm(n ~ (m5.geno + m10.geno + cluster)^2, datasum, family=poisson)
+
+mod
+```
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Variance QTL 
+--------------------------------------------------------------------------------
+
+```{r}
+# library(vqtl)
+# T15.var <- scanonevar(cross = WB02, 
+#                       chrs = qtl::chrnames(WB02)[1:19], # 'X' chr doesn't work
+#                       mean.formula = Temp_15min ~ Temp_0min + mean.QTL.add,
+#                       var.formula = ~ Temp_0min + var.QTL.add)
+```
+
+Tried using vQTL (previous version) and ran into issues with the 20th chromosome
+
+Error in `dplyr::bind_rows()`:
+! Can't combine `..1$pos` <vctrs:::common_class_fallback> and `..20$pos` <X>. 
+
+and also (when testing on chrs 1:19), got error: “can't use dominance component in a backcross” even though I didn't specify `mean.QTL.dom` in `mean.formula` or `var.QTL.dom` in `var.formula`.
+
+Trying vqtl2:
+
+```{r}
+# library(qtl2)
+# library(vqtl2)
+# WB02v2 <- convert2cross2(WB02)
+#   
+# T15.var <- scan1var(pheno_name = 'Temp_15min', mean_covar_names = 'Temp_0min', 
+#                     var_covar_names = 'Temp_0min', alleleprobs = calc_genoprob(WB02v2),
+#                     non_genetic_data = as.data.frame(WB02v2$pheno))
+```
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Two-dimensional, two-QTL scans
+--------------------------------------------------------------------------------
+
+R/qtl guide, page 220. 
+
+Condition on genotype at 15 min. peak (chr10)
+
+Phenotypes: 
+* Temp_30min, Temp_45min, Temp_60min
+* Delta_30min, Delta_45min, Delta_60min
+* Temp_avg30to60, Temp_avg45to60
+
+```{r eval = FALSE}
+T30.scantwo <- scantwo(WB02, pheno.col = "Temp_30min", model = "normal", method = "hk", verbose = F)
+save(T30.scantwo, file = "derived_data/models/scan2/T30_scantwo.Rdata")
+T45.scantwo <- scantwo(WB02, pheno.col = "Temp_45min", model = "normal", method = "hk", verbose = F)
+save(T45.scantwo, file = "derived_data/models/scan2/T45_scantwo.Rdata")
+T60.scantwo <- scantwo(WB02, pheno.col = "Temp_60min", model = "normal", method = "hk", verbose = F)
+save(T60.scantwo, file = "derived_data/models/scan2/T60_scantwo.Rdata")
+
+D30.scantwo <- scantwo(WB02, pheno.col = "Delta_30min", model = "normal", method = "hk", verbose = F)
+save(D30.scantwo, file = "derived_data/models/scan2/D30_scantwo.Rdata")
+D45.scantwo <- scantwo(WB02, pheno.col = "Delta_45min", model = "normal", method = "hk", verbose = F)
+save(D45.scantwo, file = "derived_data/models/scan2/D45_scantwo.Rdata")
+D60.scantwo <- scantwo(WB02, pheno.col = "Delta_60min", model = "normal", method = "hk", verbose = F)
+save(D60.scantwo, file = "derived_data/models/scan2/D60_scantwo.Rdata")
+
+Tavg30to60.scantwo <- scantwo(WB02, pheno.col = "Temp_avg30to60", model = "normal", method = "hk", verbose = F)
+save(Tavg30to60.scantwo, file = "derived_data/models/scan2/Tavg30to60_scantwo.Rdata")
+Tavg45to60.scantwo <- scantwo(WB02, pheno.col = "Temp_avg45to60", model = "normal", method = "hk", verbose = F)
+save(Tavg45to60.scantwo, file = "derived_data/models/scan2/Tavg45to60_scantwo.Rdata")
+
+# might as well try this 
+Tavg15to60.scantwo <- scantwo(WB02, pheno.col = "Temp_avg15to60", model = "normal", method = "hk", verbose = F)
+save(Tavg15to60.scantwo, file = "derived_data/models/scan2/Tavg15to60_scantwo.Rdata")
+T15.scantwo <- scantwo(WB02, pheno.col = "Temp_15min", model = "normal", method = "hk", verbose = F)
+save(T15.scantwo, file = "derived_data/models/scan2/T15_scantwo.Rdata")
+Taac.scantwo <- scantwo(WB02, pheno.col = "Temp_aac", model = "normal", method = "hk", verbose = F)
+save(Taac.scantwo, file = "derived_data/models/scan2/Taac_scantwo.Rdata")
+```
+
+```{r}
+load("derived_data/models/scan2/T15_scantwo.Rdata")
+load("derived_data/models/scan2/T30_scantwo.Rdata")
+load("derived_data/models/scan2/T45_scantwo.Rdata")
+load("derived_data/models/scan2/T60_scantwo.Rdata")
+
+load("derived_data/models/scan2/D30_scantwo.Rdata")
+load("derived_data/models/scan2/D45_scantwo.Rdata")
+load("derived_data/models/scan2/D60_scantwo.Rdata")
+
+load("derived_data/models/scan2/Taac_scantwo.Rdata")
+load("derived_data/models/scan2/Tavg15to60_scantwo.Rdata")
+load("derived_data/models/scan2/Tavg30to60_scantwo.Rdata")
+load("derived_data/models/scan2/Tavg45to60_scantwo.Rdata")
+```
+
+Using default thresholds (in order: full, cond-int, int, add, cond-add), we see evidence
+for interaction between chromosome 10 and 17?
+
+```{r}
+print("T15:")
+summary(T15.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("T30:")
+summary(T30.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("T45:")
+summary(T45.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("T60:")
+summary(T60.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+
+print("D30:")
+summary(D30.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("D45:")
+summary(D45.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("D60:")
+summary(D60.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+
+print("Tavg15to60:")
+summary(Tavg15to60.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("Tavg30to60:")
+summary(Tavg30to60.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("Tavg45to60:")
+summary(Tavg45to60.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+print("Taac:")
+summary(Taac.scantwo, thresholds = c(6.0, 4.7, 4.4, 4.7, 2.6))
+```
+
+Effect plots:
+
+```{r}
+marker <- find.marker(WB02, chr = c(5,10), pos = c(64.29, 9.21))
+plotPXG(WB02, marker = marker, pheno.col = "Temp_avg15to60")
+```
+
+Plot two-dimensional scans: 
+
+```{r}
+plot(Tavg30to60.scantwo, upper="fv1", lower="av1", chr = c(3, 5, 10, 17), 
+     main = "Two-dimensional scan for avg temp (30-60 min)")
+
+plot(T45.scantwo, upper="fv1", lower="av1", chr = c(5, 17), 
+     main = "Two-dimensional scan for temp @ 45 min")
+```
+
+
+
+
+
+
+
+
+
+
+What's going on at chr17 (MHC locus)?
+
+```{r}
+m1 <- 'UNC17654311' # chr10
+m2 <- 'gUNC27920115' # chr17
+m1.genos <- WB02$geno[[10]]$data[,m1]
+m2.genos <- WB02$geno[[17]]$data[,m2]
+pheno = raw_phenos[,'Temp_30min']
+geno.labels <- c('AA', 'AB')
+
+df <- data.frame(chr10 = m1.genos, chr17 = m2.genos, pheno = pheno)
+
+df$chr10 <- mapvalues(df$chr10, from = c(1,2), to = geno.labels)
+df$chr17 <- mapvalues(df$chr17, from = c(1,2), to = geno.labels)
+df$geno <- paste('chr10:', df$chr10, ' chr17:', df$chr17, sep="")
+
+dfsum <- df %>% 
+  group_by(geno) %>% 
+  dplyr::summarise(mean = mean(pheno), sd = sd(pheno))
+
+#jpeg("/Users/ellenrisemberg/Desktop/temp_30min_chr10AndChr17.jpeg", width = 700)
+ggplot(data = df, mapping = aes(x = geno, y = pheno)) +
+  geom_jitter(width = 0.1, height = 0) + 
+  geom_errorbar(data = dfsum,
+                mapping = aes(x = geno, y = mean, ymin = mean-sd, ymax = mean+sd),
+                width = 0.3) +
+  scale_x_discrete(labels = function(x) stringr::str_wrap(x, width = 7)) +
+  labs(title = 'Phenotype vs genotype at chr10 and chr17 markers', 
+       y = 'Temp at 30 min', x = 'Genotype')
+#dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+# Figures
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+Genetic map 
+
+```{r savegenmap, include=F}
+jpeg(filename="figs/supplemental/genetic_map.jpeg", width = 650)
+par(mar = c(5,5,4,1)+.1)
+plotMap(WB02, main = "", ylab = "", xlab = "")
+title(ylab="Location (cM)", cex.lab=1.8, line=2.5)
+title(xlab="Chromosome", cex.lab=1.8)
+title(main="Genetic map", cex.main=2)
+dev.off()
+```
+
+Genetic map compared to estimated map
+
+```{r savegenmap2, include=F}
+jpeg(filename="figs/supplemental/genetic_map2.jpeg", width = 650)
+par(mar = c(5,5,4,1)+.1)
+plotMap(WB02, estmap, alternate.chrid = TRUE, ylab = "", xlab = "", main = "")
+# title(ylab = "Location (cM)", cex.lab = 1.3, line = 2.7)
+# title(xlab = "Chromosome", cex.lab = 1.3)
+title(ylab="Location (cM)", cex.lab=1.8, line=2.5)
+title(xlab="Chromosome", cex.lab=1.8)
+#title(main="Genetic map compared to estimated genetic map", cex.main=2)
+dev.off()
+```
+
+
+
+
+Scan 3 (minimum temperature): 
+
+```{r}
+png("figs/fig3/minTemp.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(minTemp, main = "", bandcol = "gray90", ylim = c(0, 4), xlab = "", ylab = "", 
+     cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2.5, cex.lab = 1.5)
+title(xlab = "Chromosome", cex.lab = 1.5, line = 3)
+abline(h = c(summary(MinTemp.p)[[1]][1], summary(MinTemp.p)[[1]][2]), lty=1:2)
+# scan3 <- recordPlot()
+dev.off()
+```
+
+
+
+Qpa2-cluster PxG:
+
+Stacked bar plot instead of box plot bc phenotype is categorical (binary). 
+
+```{r}
+ggdat <- data.frame(Genotype = pull.geno(WB02i, 5)[,'UNC9309125'], 
+                    Cluster = WB02$pheno$cluster)
+ggdat$Cluster <- ifelse(ggdat$Cluster == 1, "Non-reactor", "Reactor")
+ggdat$Cluster <- factor(ggdat$Cluster)
+ggdat$Genotype <- ifelse(ggdat$Genotype == 1, 'CC027/CC027', 'CC027/C3H')
+ggdat$Genotype <- factor(ggdat$Genotype, levels = c('CC027/CC027', 'CC027/C3H'))
+ggdatsum <- ggdat %>% 
+  dplyr::group_by(Genotype, Cluster) %>% 
+  dplyr::summarize(n = n()) %>%
+  mutate(Frequency = n / sum(n))
+
+png("figs/fig2/Qpa2-cluster.png", width = 700)
+
+ggplot(data = ggdatsum, mapping = aes(x = Genotype, y = Frequency, fill = Cluster)) + 
+  geom_bar(stat = 'identity', position = 'fill') +
+  scale_fill_brewer(palette = 'Dark2') + 
+  labs(x = bquote(italic(Qpa2)~(chr5)~Genotype)) +
+  big_pxg_theme
+  # theme(axis.title = element_text(size = 26), 
+  #       axis.text = element_text(size = 24),
+  #       legend.title = element_text(size = 22),
+  #       legend.text = element_text(size = 22))
+
+dev.off()
+```
+
+
+Qpa4-time of min temp PxG: 
+
+```{r}
+ggdat <- data.frame(Genotype = pull.geno(WB02, chr=6)[,'mbackupUNC060210105'], 
+                    Min_Temp_Time = WB02$pheno$Min_Temp_Time)
+ggdat$Min_Temp_Time <- factor(ggdat$Min_Temp_Time)
+ggdat$Genotype <- ifelse(ggdat$Genotype == 1, 'CC027/CC027', 'CC027/C3H')
+ggdat$Genotype <- factor(ggdat$Genotype, levels = c('CC027/CC027', 'CC027/C3H'))
+ggdatsum <- ggdat %>% 
+  dplyr::group_by(Genotype, Min_Temp_Time) %>% 
+  dplyr::summarize(n = n()) %>%
+  mutate(Frequency = n / sum(n))
+
+png("figs/supplemental/other-qtl/Qpa4-minTempTime.png", width = 700)
+
+ggplot(data = ggdatsum, mapping = aes(x = Genotype, y = Frequency, fill = Min_Temp_Time)) + 
+  geom_bar(stat = 'identity', position = 'fill') +
+  scale_fill_brewer(palette = 'Dark2') + 
+  labs(x = bquote(italic(Qpa4)~(chr6)~Genotype), fill = "Min temp time") + 
+  big_pxg_theme
+
+dev.off()
+```
+
+
+
+
+
+PxG: 
+
+Stacked bar plot instead of box plot bc phenotype is categorical (binary). 
+
+```{r}
+ggdat2 <- data.frame(Genotype = pull.geno(WB02, chr=17)[,'S6Y171422147'], 'Symptom score' = WB02$pheno$Symptom_score)
+ggdat2$Symptom.score <- factor(ggdat2$Symptom.score)
+ggdat2$Genotype <- ifelse(ggdat2$Genotype == 1, 'CC027/CC027', 'CC027/C3H')
+ggdat2$Genotype <- factor(ggdat2$Genotype, levels = c('CC027/CC027', 'CC027/C3H'))
+ggdat2sum <- ggdat2 %>% 
+  dplyr::group_by(Genotype, Symptom.score) %>% 
+  dplyr::summarize(n = n()) %>%
+  mutate(Frequency = n / sum(n))
+
+png("figs/supplemental/other-qtl/Qpa3-sympScore.png", width = 720)
+
+ggplot(data = ggdat2sum, mapping = aes(x = Genotype, y = Frequency, fill = Symptom.score)) + 
+  geom_bar(stat = 'identity', position = 'fill') +
+  scale_fill_brewer(palette = 'Dark2') + 
+  labs(x = bquote(italic(Qpa3)~(chr17)~Genotype), fill = "Symptom score") +
+  big_pxg_theme
+
+dev.off()
+```
+
+
+
+
+--------------------------------------------------------------------------------
+### Other QTL (Qpa4-8)
+--------------------------------------------------------------------------------
+
+Qpa4
+
+```{r}
+png("figs/other_qtl/timeOfMinTemp.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(minTempTime, main = "", bandcol = "gray90", ylim = c(0, 4), xlab = "", ylab = "", 
+     cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2.5, cex.lab = 1.5)
+title(xlab = "Chromosome", cex.lab = 1.5, line = 3)
+abline(h = c(summary(MinTempTime.p)[[1]][1], summary(MinTempTime.p)[[1]][2]), lty=1:2)
+#scan4 <- recordPlot()
+dev.off()
+```
+
+Qpa5/6
+
+```{r}
+png("figs/other_qtl/IgE.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(IgE, main = "", bandcol = "gray90", xlab = "", ylab = "", 
+     cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2.5, cex.lab = 1.5)
+title(xlab = "Chromosome", cex.lab = 1.5, line = 3)
+abline(h = c(summary(IgE.p)[[1]][1], summary(IgE.p)[[1]][2]), lty=1:2)
+#scan4 <- recordPlot()
+dev.off()
+```
+
+PxG: 
+
+```{r}
+png("figs/other_qtl/Qpa5-IgE.png", width = 600)
+pxg(WB02, pheno = raw_phenos$PNsIgE, marker = 'mbackupUNC090355700', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "", ylab = "PNsIgE", 
+    title = "", bestfit = FALSE, theme = big_theme, type = 'boxplot')
+dev.off()
+```
+
+```{r}
+png("figs/other_qtl/Qpa6-IgE.png", width = 600)
+pxg(WB02, pheno = raw_phenos$PNsIgE, marker = 'S3C111805292', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "", ylab = "PNsIgE", 
+    title = "", bestfit = FALSE, theme = big_theme, type = 'boxplot')
+dev.off()
+```
+
+PxG for Qpa7 and Qpa8:
+
+```{r}
+png("figs/other_qtl/Qpa7-minTemp.png", width = 600)
+pxg(WB02, pheno = raw_phenos$Min_Temp, marker = 'gUNC27787813', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "", ylab = "Minimum Temperature", 
+    title = "", bestfit = FALSE, theme = big_theme, type = 'boxplot')
+dev.off()
+```
+
+```{r}
+# png("figs/other_qtl/Qpa8-T45.png", width = 600)
+# pxg(WB02, pheno = raw_phenos$T45, marker = 'SXX204357509', 
+#     geno.map = list(A = "CC027", B = "C3H"), xlab = "", ylab = "Temperature at 45 min", 
+#     title = "", bestfit = FALSE, theme = big_theme, type = 'boxplot')
+# dev.off()
+```
+`Error in data.frame(geno = marker.genos, imp_geno = imp.marker.genos, : 
+arguments imply differing number of rows: 356, 0`
+
+
+
+
+
+--------------------------------------------------------------------------------
+# Plots for presentations/posters
+--------------------------------------------------------------------------------
+
+Parent trajectories for ppt:
+
+```{r}
+pptpparent <- pparent + theme(axis.title = element_text(size=16), axis.text = element_text(size = 12), legend.text = element_text(size=14), legend.title = element_text(size=14))
+ggsave(pptpparent, width = 7, filename = 'figs/ppt/ppparent.jpeg')
+```
+
+### Temperature at 15 min 
+
+T15 scan: 
+
+```{r}
+png("figs/ppt/T15.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(T15, main = "Temperature at 15 minutes", bandcol = "gray90", ylim = c(0, 4.3), xlab = "", 
+          ylab = "", cex.main = 1.8, cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2, cex.lab = 2)
+abline(h = c(summary(T15.p)[[1]][1], summary(T15.p)[[1]][2]), lty=1:2)
+title(xlab = "Chromosome", cex.lab = 2, line = 3)
+# scan1 <- recordPlot()
+dev.off()
+```
+
+chr 10-specific T15 scan:
+
+```{r}
+jpeg('figs/ppt/chr10-scan.jpeg', width = 980, height = 300)
+plot(T15, chr = 10, main = "Temperature at 15 min (chr 10)", cex.main = 2, ylab = "", xlab = "")
+title(ylab = "LOD", line = 2, cex.lab = 2)
+title(xlab = "Map position (cM)", line = 2.5, cex.lab = 2)
+```
+
+T15-Qpa1 PxG: 
+
+chr10 marker: UNC17654311
+
+```{r include=F}
+jpeg("figs/pxg/Qpa1-T15-scatter.jpeg", width = 550)
+pxg(WB02, pheno = raw_phenos[,'Temp_15min'], marker = 'UNC17654311', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "Genotype (chr10 QTL)", 
+    ylab = "Temperature - 15 min", title = "", theme = big_theme)
+dev.off()
+```
+
+For powerpoint: 
+
+```{r}
+png("figs/ppt/Qpa1-T15-notchbox.png") # default width/height = 480 
+pxg(WB02, pheno = raw_phenos[,'Temp_15min'], marker = 'UNC17654311', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "Genotype (chr10 QTL)", 
+    ylab = "Temperature - 15 min", title = "", theme = big_theme,
+    type = 'boxplot')
+dev.off()
+```
+
+This doesn't look that significant... just going to test it 
+
+```{r}
+fit <- lm(WB02$pheno$Temp_15min ~ pull.geno(WB02, 10)[,'UNC17654311'] + WB02$pheno$Temp_0min)
+summary(fit)
+```
+
+Try plotting residuals after regressing out T0:
+
+```{r}
+fitres <- lm(WB02$pheno$Temp_15min ~ WB02$pheno$Temp_0min)
+res <- residuals(fitres)
+
+pxg(WB02, pheno = res, marker = 'UNC17654311', 
+    geno.map = list(A = "CC027", B = "C3H"), xlab = "Genotype (chr10 QTL)", 
+    ylab = "Temperature - 15 min", title = "", theme = big_theme,
+    type = 'violin')
+```
+
+### Temperature at 30 min 
+
+T30 scan:
+
+```{r}
+png("figs/ppt/T30.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(T30, main = "Temperature at 30 minutes", bandcol = "gray90", ylim = c(0, 4.3), xlab = "", 
+          ylab = "", cex.main = 1.8, cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2, cex.lab = 2)
+abline(h = c(summary(T30.p)[[1]][1], summary(T15.p)[[1]][2]), lty=1:2)
+title(xlab = "Chromosome", cex.lab = 2, line = 3)
+# scan1 <- recordPlot()
+dev.off()
+```
+
+### Cluster 
+
+Cluster scan (binarized - reactors vs non-reactors): 
+
+```{r}
+jpeg("figs/scans/cluster_1vs23.jpeg", width=650)
+plot(cluster_1vs23, main = "Temperature trajectory cluster", alternate.chrid = T, bandcol = 'gray90', cex.lab=2, cex.axis=1.5, cex.main=1.8, ylab = "")
+title(ylab = "LOD", line = 2.6, cex.lab = 2)
+abline(h = c(summary(cluster_1vs23.p)[[1]][1], summary(cluster_1vs23.p)[[1]][2]), lty=1:2)
+dev.off()
+```
+
+Cluster scan for ppt (y-axis matching with others): 
+
+```{r}
+png("figs/ppt/cluster.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(cluster_1vs23, main = "Cluster", bandcol = "gray90", ylim = c(0, 4.3), xlab = "", 
+          ylab = "", cex.main = 1.8, cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2, cex.lab = 2)
+abline(h = c(summary(cluster_1vs23.p)[[1]][1], summary(T15.p)[[1]][2]), lty=1:2)
+title(xlab = "Chromosome", cex.lab = 2, line = 3)
+# scan1 <- recordPlot()
+dev.off()
+```
+
+### Peanut-specific IgE 
+
+PNsIgE scan: 
+
+```{r}
+png("figs/ppt/PNsIgE.png", width = 750)
+#par(mar = c(bottom = 4, left = 3.5, top = 1.5, right = 2.1))
+plot_modX(IgE, main = "Peanut-specific IgE (\U00B5g/mL)", bandcol = "gray90", 
+          xlab = "", ylab = "", cex.main = 1.8, cex.axis = 1.5, alternate.chrid = T)
+title(ylab = "LOD", line = 2, cex.lab = 2)
+abline(h = c(summary(IgE.p)[[1]][1], summary(IgE.p)[[1]][2]), lty=1:2)
+title(xlab = "Chromosome", cex.lab = 2, line = 3)
+# scan1 <- recordPlot()
+dev.off()
+```
+
+
+

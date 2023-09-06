@@ -1,0 +1,346 @@
+---
+title: "themis_analysis"
+author: "Ellen Risemberg"
+date: "4/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/ellenrisemberg/Documents/ValdarFerris/Peanut_Crosses/backcross/")
+```
+
+### Libraries
+
+```{r lib, message=FALSE}
+library(tidyverse)
+library(factoextra)
+library(stringr)
+library(bestNormalize)
+library(RColorBrewer)
+library(corrplot)
+source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/qtl_functions.R")
+```
+
+## Load data
+
+```{r load}
+df <- readr::read_csv("source_data/themis-variant-flow.csv", na = c("na"))
+df$Strain <- as.factor(df$Strain)
+
+load_themes() # load ggplot themes 
+```
+
+Relevel `Strain` so that CC027 is the *last* level. Useful for `contr.SAS` contrasts which takes the last level as the reference; `contr.helmert` and `contr.sum` will also use the last level as the baseline. 
+
+Modify `relevel()` function so that it moves `ref` argument to end of list: 
+
+```{r fun}
+relevel <- function(x, ref){
+  lev <- levels(x)
+  if (length(ref) != 1L) 
+    stop("'ref' must be of length one")
+  if (is.character(ref)) 
+    ref <- match(ref, lev)
+  if (is.na(ref)) 
+    stop("'ref' must be an existing level")
+  nlev <- length(lev)
+  if (ref < 1 || ref > nlev) 
+    stop(gettextf("ref = %d must be in 1L:%d", ref, nlev), 
+         domain = NA)
+  factor(x, levels = lev[c(seq_along(lev)[-ref], ref)], exclude = NULL)
+}
+```
+
+Relevel strain column: 
+
+```{r relevel}
+df$Strain <- relevel(df$Strain, ref = "CC027")
+```
+
+Convert all other data to numeric: 
+
+```{r}
+df[,c(4:42)] <- mutate_all(df[,c(4:42)], function(x) as.numeric(as.character(x)))
+```
+
+Transform phenotypes:
+
+```{r}
+rawdf <- df 
+for (i in c(4:ncol(df))){
+  df[,i] <- predict(bestNormalize(rawdf[,i][[1]]))
+  #hist(df[,i][[1]])
+}
+```
+
+## Linear regression with Helmert contrasts 
+
+Helmert contrasts result in comparing each group to the mean of the other groups and consist of negative values for baseline group (so -1 for all CC strains other than CC027) and positive values for treatment group (+4). Sum of contrasts needs to be zero. 
+
+```{r helm}
+contrasts(df$Strain) <- contr.helmert(levels(df$Strain))
+contrasts(df$Strain)
+```
+
+Since we only care about CC027 vs the avg of other strains, we can just use the equivalent of the last column (with CC027 = 4 and all the others = -1). 
+
+Set helmert-style contrasts so CC027 is compared against the mean of all other strains:
+
+```{r helm-2}
+contrasts(df$Strain, how.many = 1) <- c(-1,-1,-1,-1,4)
+contrasts(df$Strain)
+```
+
+Linear regression for each phenotype:
+
+```{r helm-mod}
+vars <- colnames(df)[4:ncol(df)]
+
+helm_res <- data.frame(phenotype = vars,
+                          beta = rep(NA, length(vars)), 
+                          pval = rep(NA, length(vars)))
+
+for (i in 1:length(vars)){
+  ix = i+3
+  f <- paste(names(df)[ix], "~ Strain")
+  assign("fit", do.call("lm", list(as.formula(f), data = as.name("df"))))
+  sum <- summary(fit)$coefficients
+  
+  helm_res[i, c(2:ncol(helm_res))] <- c(sum[2,1], sum[2,4])
+}
+
+helm_res
+```
+
+Print significant rows:
+
+```{r}
+helm_res[which(helm_res$pval < 0.05),]
+```
+
+
+## Tukey's HSD analysis 
+
+Phenotypes were chosen for further analysis / plotting based on LM results using *helmert* contrasts, but *treatment* contrasts (or any other type of contrast that treats non-CC027 strains as distinct from each other) are necessary to perform Tukey's HSD tests. 
+
+Tukey's Honest Significant Difference (Tukey's HSD) test performs pairwise comparisons between groups based on the range of the sample means rather than the individual differences. Intervals returned by this function are based on the Studentized range statistic. 
+
+For each phenotype where CC027 is significantly different from avg of all other strains, print box plots and 95% confidence intervals from Tukey's HSD: 
+
+```{r}
+contrasts(df$Strain) <- contr.treatment(levels(df$Strain))
+```
+
+```{r}
+par(las = 1)
+par(mar = c(5,7,4,2)+0.1) #default is c(5,4,4,2)+0.1
+colors <- c('black', 'black', 'black', 'red', 'black', 'black', 'red', 'black', 'red', 'red')
+helm_res$num.sig.tukey.comps <- numeric(nrow(helm_res))
+helm_res$sig.tukey.comps <- character(nrow(helm_res))
+
+for (i in 1:nrow(helm_res)){
+  # Tukey's HSD 
+  f <- paste(helm_res$phenotype[i], "~ Strain")
+  assign("fit", do.call("aov", list(as.formula(f), data = as.name("df"))))
+  hsd <- TukeyHSD(fit)
+  
+  # count number of significant comparisons with CC027 
+  CC027pvals <- hsd$Strain[str_detect(rownames(hsd$Strain), 'CC027'), 'p adj']
+  count.sig <- sum(CC027pvals < 0.05)
+  helm_res$num.sig.tukey.comps[i] <- count.sig
+  sig.comps <- paste(sub('CC027-', '', names(CC027pvals)[which(CC027pvals < 0.05)]), collapse = ',')
+  helm_res$sig.tukey.comps[i] <- sig.comps
+  
+  if (count.sig > 0){
+    # box plot
+    p <- ggplot(data = df, mapping = aes_string(x = "Strain", y = helm_res$phenotype[i])) +
+      geom_boxplot()
+    print(p)
+
+    # Tukey's HSD plot
+    plot(hsd, col = colors)
+  }
+  
+}
+```
+
+### Save results 
+
+Supplementary table 2
+
+```{r}
+write_csv(helm_res, file = "results/themis-Tcell-analysis.csv")
+```
+
+
+--------------------------------------------------------------------------------
+## Multivariate analysis 
+--------------------------------------------------------------------------------
+
+### Z-score normalize 
+
+`scale()` function centers and scales the columns of a numeric matrix. Default behavior is Z-score normalization: centering by subtracting column means, scaling by dividing the centered columns by their standard deviations.
+
+```{r}
+scaleddf <- rawdf
+scaleddf[,c(4:42)] <- scale(rawdf[,c(4:42)])
+```
+
+### PCA
+
+There are a few missing values for one mouse. Not using `missMDA` to impute before running PCA bc data is not MCAR. 
+
+```{r}
+scaleddf <- na.omit(scaleddf)
+
+pca <- prcomp(scaleddf[,-c(1:3)])
+
+fviz_pca_ind(pca, habillage = scaleddf$Strain)
+fviz_pca_var(pca)
+
+fviz_eig(pca)
+```
+
+### Heatmap
+
+```{r}
+corrmat = cor(scaleddf[4:ncol(scaleddf)], use = "pairwise.complete.obs")
+corrplot(corrmat, type = "upper", order = "hclust")
+```
+
+
+
+
+
+### Figures 
+
+Regulatory T-cells (spleen): 
+
+```{r}
+png("figs/fig5/TregSpl.png", width=650)
+ggplot(data = rawdf, mapping = aes_string(x = "Strain", y = "Treg.Spl.T", fill = "Strain")) +
+  geom_boxplot() + 
+  geom_jitter(width = 0.1) + 
+  scale_fill_manual(values = brewer.pal(6, 'Dark2')[-5]) + 
+  labs(y = "Count", title = "Regulatory T cells (spleen)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 24), 
+        axis.text = element_text(size = 22), 
+        legend.title = element_text(size = 24),
+        legend.text = element_text(size = 22),
+        plot.title = element_text(size = 24)) 
+dev.off()
+
+png('figs/supplemental/tukey/Treg.png', width = 650, height = 400)
+par(las = 1)
+par(mfrow=c(1,1))
+par(mar = c(5,7,4,2)+0.1) #default is c(5,4,4,2)+0.1
+fit <- aov(Treg.Spl.T ~ Strain, data = df)
+hsd <- TukeyHSD(fit)
+plot(hsd, col = colors, cex = 2)
+dev.off()
+```
+
+
+DNT cells (spleen):
+
+```{r}
+png("figs/fig5/DNTSpl.png", width=650)
+ggplot(data = rawdf, mapping = aes_string(x = "Strain", y = "Spl_DNTper", fill = "Strain")) +
+  geom_boxplot() + 
+  geom_jitter(width = 0.1) + 
+  scale_fill_manual(values = brewer.pal(6, 'Dark2')[-5]) + 
+  labs(y = "Proportion", title = "Double Negative T cells (spleen)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 24), 
+        axis.text = element_text(size = 22), 
+        legend.title = element_text(size = 24),
+        legend.text = element_text(size = 22),
+        plot.title = element_text(size = 24)) 
+dev.off()
+
+png('figs/supplemental/tukey/DNT.png', width = 650, height = 400)
+par(las = 1)
+par(mfrow=c(1,1))
+par(mar = c(5,7,4,2)+0.1) #default is c(5,4,4,2)+0.1
+fit <- aov(Spl_DNTper ~ Strain, data = df)
+hsd <- TukeyHSD(fit)
+plot(hsd, col = colors, cex = 2)
+dev.off()
+```
+
+
+
+CD8+ T cells (spleen):
+
+```{r}
+png("figs/fig5/CD8TSpl.png", width=650)
+ggplot(data = rawdf, mapping = aes_string(x = "Strain", y = "Spl_CD8Tper", fill = "Strain")) +
+  geom_boxplot() + 
+  geom_jitter(width = 0.1) + 
+  scale_fill_manual(values = brewer.pal(6, 'Dark2')[-5]) + 
+  labs(y = "Proportion", title = "CD8+ T cells (spleen)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 24), 
+        axis.text = element_text(size = 22), 
+        legend.title = element_text(size = 24),
+        legend.text = element_text(size = 22),
+        plot.title = element_text(size = 24)) 
+dev.off()
+
+png('figs/supplemental/tukey/CD8T.png', width = 650, height = 400)
+par(las = 1)
+par(mfrow=c(1,1))
+par(mar = c(5,7,4,2)+0.1) #default is c(5,4,4,2)+0.1
+fit <- aov(Spl_CD8Tper ~ Strain, data = df)
+hsd <- TukeyHSD(fit)
+plot(hsd, col = colors, cex = 2)
+dev.off()
+```
+
+CD4+ T cells (thymus):
+
+```{r}
+png("figs/fig5/CD4TThy.png", width=650)
+ggplot(data = rawdf, mapping = aes_string(x = "Strain", y = "Thy_CD4Tper", fill = "Strain")) +
+  geom_boxplot() + 
+  geom_jitter(width = 0.1) + 
+  scale_fill_manual(values = brewer.pal(6, 'Dark2')[-5]) + 
+  labs(y = "Proportion", title = "CD4+ T cells (thymus)") +
+  theme(legend.position = "none",
+        axis.title = element_text(size = 24), 
+        axis.text = element_text(size = 22), 
+        legend.title = element_text(size = 24),
+        legend.text = element_text(size = 22),
+        plot.title = element_text(size = 24)) 
+dev.off()
+
+png('figs/supplemental/tukey/CD4T.png', width = 650, height = 400)
+par(las = 1)
+par(mfrow=c(1,1))
+par(mar = c(5,7,4,2)+0.1) #default is c(5,4,4,2)+0.1
+fit <- aov(Thy_CD4Tper ~ Strain, data = df)
+hsd <- TukeyHSD(fit)
+plot(hsd, col = colors, cex = 2)
+dev.off()
+```
+
+PCA:
+
+```{r}
+png("figs/fig5/pca.png", height = 380)
+fviz_pca_ind(pca, label = "none", col.ind = scaleddf$Strain, pointsize = 2) +
+  scale_color_manual(name = "Strain",
+                     labels = c("CC007", "CC019", "CC026", "CC061", "CC027"),
+                     values = brewer.pal(6, 'Dark2')[-5]) + 
+  scale_shape_manual(name = "Strain",
+                     labels = c("CC007", "CC019", "CC026", "CC061", "CC027"),
+                     values = c(19, 17, 15, 8, 7)) +
+  theme(axis.title = element_text(size = 18), 
+        axis.text = element_text(size = 16), 
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 16),
+        plot.title = element_text(size = 18))
+dev.off()
+```
