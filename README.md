@@ -1,3 +1,5 @@
+**NOTE: This page is under construction. All code is functional but environment build is ongoing so it can be run smoothly.**
+
 # A mutation in *Themis* contributes to peanut-induced oral anaphylaxis in CC027 mice 
 
 This document describes how to reproduce heritability and QTL analyses of various peanut allergy-related phenotypes in a backcross between CC0027 (reacts orally to peanut) and C3H (does not react orally to peanut). 
