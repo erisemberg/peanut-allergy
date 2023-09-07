@@ -18,7 +18,7 @@ docker build . -t pnut
 Run the docker container, opening a terminal session within the container:
 
 ```
-docker run -e PASSWORD=pw123 --rm -v $(pwd):/home/rstudio/work -p 8787:8787 -it gxd /bin/bash
+docker run -e PASSWORD=pw123 --rm -v $(pwd):/home/rstudio/work -p 8787:8787 -it pnut /bin/bash
 ```
 
 Navigate to the working directory: 
@@ -30,9 +30,15 @@ cd home/rstudio/work
 Prepare R/qtl file 
 -----------------------
 
+Run the following code to produce a file in the format required by R/qtl, which will be stored in the `derived_data` directory. 
+
 ```
 Rscript rqtl-file-gen-pnutbc.R
 ```
+
+QTL mapping 
+-----------------------
+
 
 Candidate gene analysis
 -----------------------
