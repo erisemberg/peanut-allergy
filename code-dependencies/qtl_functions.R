@@ -1,3 +1,4 @@
+### DOCKER VERSION
 ### Functions for QTL analysis (SARS and peanut allergy)
 library(lme4) # for modeling random effects
 library(MESS) # for AUC calculation 

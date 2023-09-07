@@ -1,3 +1,5 @@
+### DOCKER VERSION
+
 # This script processes genotype and phenotype data for R/qtl analysis. Performs
 # marker filtering and recoding (ATCG -> AA/AB/BB) and integrates phenotype data 
 # into a csv file in the appropriate format for analysis with R/qtl. 
@@ -20,19 +22,19 @@
 #
 # Note: this script does not yet include any filtering/handling of Y/MT/PAR markers
 
+print(getwd())
+
 library(tidyverse)
 library(readxl)
 library(stringi)
-source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/dependencies/utils.R")
-source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/qtl_functions.R")
+source("code-dependencies/utils.R")
+source("code-dependencies/qtl_functions.R")
 
-log <- make_logger("file_processing_notes.md")
+ensure_directory("logs")
+log <- make_logger("logs/file_processing_notes.md")
 
 #---------------------------------Parameters-----------------------------------#
-setwd("/Users/ellenrisemberg/Documents/ValdarFerris/Peanut_Crosses/backcross/")
-  
 geno_file <- "source_data/Cr_WB02_miniMUGA-06242021.csv"
-pad_geno_ids <- FALSE
 pheno_file <- "source_data/CC027xC3H_phenotypes.xlsx"
 ensure_directory("derived_data")
 out_file <- "derived_data/Rqtl_CC27xC3H_BCv2.csv"
@@ -43,7 +45,6 @@ crosstype = "bc" # cross type (f2 or bc)
 # Phenotypes to include
 pheno.names = c("Cage", "Batch", "Geno_ID", "sex", "Temp_0min", "Temp_15min", "Temp_30min",
                 "Temp_45min", "Temp_60min", "Min_Temp", "Min_Temp_Time", "PNsIgE", "Symptom_score") 
-infection = NULL # infection type (SARS-CoV, PBS, HKU3-CoV, or NULL)
 
 A.ref = "CC027.GeniUnc" # parent mouse representing A genotype 
 B.ref = "C3H.HeJ" # parent mouse representing B genotype 
@@ -57,25 +58,6 @@ log(paste("Genotype data loaded from ", geno_file, ".", sep = ""))
 F2_start = ncol(geno)-num_F2s+1 # column index of first F2 mouse column
 F2_end = ncol(geno) # column index of last F2 mouse column 
 log(paste("Columns ", F2_start, " to ", F2_end, " are F2 mice."))
-
-# If necessary, convert identifier to one with padded numeric ID (so mouse IDs 
-# are consistent across genotype file, and between genotype and phenotype files)
-if (pad_geno_ids == TRUE){
-  for (i in F2_start:F2_end){
-    mouse_name <- colnames(geno)[i]
-    strings <- str_split(mouse_name, "_")[[1]] # separate name by _
-    if (length(strings) == 3){ # need to separate gender & ID 
-      stri_sub(strings[3], 2, 1) <- "_" # add underscore between gender & ID
-      mouse_name <- paste(strings, collapse="_") # collapse back down 
-      strings <- str_split(mouse_name, "_")[[1]] # separate back out for further checking
-    }
-    if (nchar(strings[4]) < 4){ # need to pad mouse number 
-      mouse_name <- paste(c(strings[1:3], sprintf("%04s", strings[4])), collapse = "_")
-    }
-    colnames(geno)[i] <- toupper(mouse_name) 
-  }
-  log(paste("Mouse IDs padded."))
-}
 
 log(paste("Starting with ", nrow(geno), " markers.", sep=""))
 geno <- geno[geno$Chromosome != 0, ] # Remove chr0 rows
@@ -117,7 +99,8 @@ geno <- geno[which(geno$het_all != 1),]
 log(paste("After removing markers with all het calls: ", nrow(geno), sep=""))
 
 # Plot x = ref/(ref+alt) and y = het/(ref+alt+het)
-png("figs/marker_qc_plot.png", width=600)
+ensure_directory("figures")
+png("figures/marker_qc_plot.png", width=600)
 par(mar = c(5,6,4,1)+.1)
 plot(x=geno$het_all, y=geno$ref_alt, main="Autosomal and X markers", 
      xlab="Het/(Het + Ref + Alt)", ylab="Ref/(Ref + Alt)", cex.main = 2, 
@@ -177,11 +160,6 @@ log(paste("Phenotype data loaded from ", pheno_file, ".", sep=""))
 # Convert pheno$Geno_ID and geno$mouse_ID to uppercase for matching
 pheno$Geno_ID <- toupper(pheno$Geno_ID) 
 rqtl$mouse_ID <- c(rqtl$mouse_ID[1:2], toupper(rqtl$mouse_ID[3:nrow(rqtl)]))
-
-# If specified, select mice with noted infection type 
-if (!is.null(infection)){
-  pheno <- pheno[which(pheno$infection == infection),]
-}
 
 # Before adding phenotype data to genotype data, filter down to mice that we have 
 # phenotype data for 
