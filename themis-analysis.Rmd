@@ -7,19 +7,18 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/ellenrisemberg/Documents/ValdarFerris/Peanut_Crosses/backcross/")
 ```
 
 ### Libraries
 
 ```{r lib, message=FALSE}
-library(tidyverse)
-library(factoextra)
-library(stringr)
-library(bestNormalize)
-library(RColorBrewer)
-library(corrplot)
-source("/Users/ellenrisemberg/Documents/ValdarFerris/scripts/qtl_functions.R")
+suppressMessages(library(tidyverse))
+suppressMessages(library(factoextra))
+suppressMessages(library(stringr))
+suppressMessages(library(bestNormalize))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(corrplot))
+source("code-dependencies/qtl_functions.R")
 ```
 
 ## Load data
@@ -174,9 +173,8 @@ write_csv(helm_res, file = "results/themis-Tcell-analysis.csv")
 ```
 
 
---------------------------------------------------------------------------------
+
 ## Multivariate analysis 
---------------------------------------------------------------------------------
 
 ### Z-score normalize 
 
@@ -214,6 +212,11 @@ corrplot(corrmat, type = "upper", order = "hclust")
 
 
 ### Figures 
+
+```{r}
+ensure_directory("figs/fig5")
+ensure_directory("figs/supplemental/tukey")
+```
 
 Regulatory T-cells (spleen): 
 

@@ -22,12 +22,9 @@
 #
 # Note: this script does not yet include any filtering/handling of Y/MT/PAR markers
 
-print(getwd())
-
 library(tidyverse)
 library(readxl)
 library(stringi)
-source("code-dependencies/utils.R")
 source("code-dependencies/qtl_functions.R")
 
 ensure_directory("logs")
@@ -37,7 +34,7 @@ log <- make_logger("logs/file_processing_notes.md")
 geno_file <- "source_data/Cr_WB02_miniMUGA-06242021.csv"
 pheno_file <- "source_data/CC027xC3H_phenotypes.xlsx"
 ensure_directory("derived_data")
-out_file <- "derived_data/Rqtl_CC27xC3H_BCv2.csv"
+out_file <- "derived_data/Rqtl_CC27xC3H_BC.csv"
 Y_MT_out_file <- "derived_data/Geno_CC27xC3H_Y_MT.csv"
 
 num_F2s = 365 # number of genotyped F2 (or BC) mice
@@ -99,8 +96,8 @@ geno <- geno[which(geno$het_all != 1),]
 log(paste("After removing markers with all het calls: ", nrow(geno), sep=""))
 
 # Plot x = ref/(ref+alt) and y = het/(ref+alt+het)
-ensure_directory("figures")
-png("figures/marker_qc_plot.png", width=600)
+ensure_directory("figs")
+png("figs/marker_qc_plot.png", width=600)
 par(mar = c(5,6,4,1)+.1)
 plot(x=geno$het_all, y=geno$ref_alt, main="Autosomal and X markers", 
      xlab="Het/(Het + Ref + Alt)", ylab="Ref/(Ref + Alt)", cex.main = 2, 
