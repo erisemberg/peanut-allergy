@@ -79,6 +79,7 @@ plotMap(WB02, estmap)
 Save genetic map 
 
 ```{r savegenmap, include=F}
+ensure_directory("figs/supplemental")
 png("figs/supplemental/genetic_map.png", width = 650)
 par(mar = c(5,5,4,1)+.1)
 plotMap(WB02, main = "", ylab = "", xlab = "")
@@ -867,7 +868,7 @@ peakstbl <- peakstbl %>%
 # now that it's sorted by adjusted p-value, add */**/*** (makes it a string so can't sort)
 peakstbl$adj_pval <- paste(peakstbl$adj_pval, ifelse(peakstbl$adj_pval < 0.005, '(***)', ifelse(peakstbl$adj_pval < 0.05, '(**)', ifelse(peakstbl$adj_pval < 0.10, '(*)', NA))))
 
-col_order <- c('QTL', 'Phenotype', 'chrint', 'adj_pval', 'phenotypic.var.expl')
+col_order <- c('QTL', 'Phenotype', 'chrint', 'unadj_pval', 'adj_pval', 'phenotypic.var.expl')
 peakstbl <- peakstbl[,col_order]
 ```
 
