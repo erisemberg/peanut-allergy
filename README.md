@@ -84,7 +84,7 @@ gunzip source_data/Mus_musculus.GRCm38.97.gtf.gz --keep
 Create a map between Ensembl IDs and gene names to be used by later scripts. This will produce a csv file called `GRCm38-gtf-genemap.csv` which maps ensembl IDs to gene symbols. 
 
 ```
-Rscript make_gene_map.R
+Rscript make_ensembl_genemap.R
 ```
 
 Count total genes in each QTL region:
