@@ -15,15 +15,15 @@ if [ "$mode" != "bash" ] && [ "$mode" != "slurm" ]; then
 	exit 
 fi 
 
-mkdir -p results/cand-gene-analysis
-mkdir -p results/cand-gene-analysis/summary
-mkdir -p results/cand-gene-analysis/vardata
-mkdir -p logs/cand-gene-analysis 
+mkdir -p results
+mkdir -p results/summary
+mkdir -p results/vardata
+mkdir -p logs 
 
 qtls=("Qpa1" "Qpa2" "Qpa3" "Qpa4" "Qpa5" "Qpa6" "Qpa7" "Qpa8")
 
 for qtl in ${qtls[@]}; do
-	vcf=$(find source_data/VCFs -name "$qtl*" | tr "\n" ",")
+	vcf=$(find VCFs -name "$qtl*" | tr "\n" ",")
 
 	if [ $mode == "slurm" ]; then 
 		logfile="logs/${qtl}.out"

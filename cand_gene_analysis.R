@@ -1,9 +1,9 @@
 # This script performs candidate gene filtering 
-suppressMessages(library(tidyverse))
 library(readr)
+suppressMessages(library(tidyverse))
 library(stringi)
+source('code-dependencies/utils.R')
 source('code-dependencies/qtl_functions.R')
-source('code-dependencies/cmdline.R')
 
 #-----------------------------------Setup--------------------------------------#
 # input
@@ -14,12 +14,12 @@ vcffiles <- stri_split_fixed(vcffiles, ',', omit_empty = TRUE)[[1]]
 # output
 prefix <- cmdline.option("prefix")
 
-ensure_directory('results/cand-gene-analysis')
-ensure_directory('results/cand-gene-analysis/vardata')
-outfile <- paste('results/cand-gene-analysis/vardata/', prefix, '-vardata.csv', sep="")
+ensure_directory('results')
+ensure_directory('results/vardata')
+outfile <- paste('results/vardata/', prefix, '-vardata.csv', sep="")
 
-ensure_directory('results/cand-gene-analysis/summary')
-logfile <- paste('results/cand-gene-analysis/summary/', prefix, '.txt', sep="")
+ensure_directory('results/summary')
+logfile <- paste('results/summary/', prefix, '.txt', sep="")
 log <- make_logger(filename = logfile)
 
 log(paste("VCF files: ", vcffiles))
@@ -122,7 +122,7 @@ for (vcffile in vcffiles){ # for each region in QTL
 }
 
 # map ensembl IDs to gene names 
-genemap <- readr::read_csv('derived_data/GRCm38-gtf-genemap.csv', show_col_types = FALSE)
+genemap <- readr::read_csv('GRCm38-gtf-genemap.csv', show_col_types = FALSE)
 
 vardata_by_gene <- merge(vardata_by_gene, genemap, all.x = TRUE, by = 'gene_id')
 vardata_by_gene <- vardata_by_gene[,c(5,1:4)]

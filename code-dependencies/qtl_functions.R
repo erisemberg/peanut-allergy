@@ -209,7 +209,15 @@ load_themes <- function(){
                       axis.text = element_text(size = 6), 
                       legend.title = element_text(size = 8),
                       legend.text = element_text(size = 6),
-                      legend.box.spacing = unit(0, 'pt')) # no space between plot and legend 
+                      legend.box.spacing = unit(0, 'pt')) # no space between plot and legend
+  
+  # theme for publication (multiple plots per figure)
+  pub_theme_wt <<- theme_bw() + theme(legend.key.size = unit(0.03, 'npc'), # legend key is 0.03 of the plot size (basically)
+                      axis.title = element_text(size = 8), 
+                      axis.text = element_text(size = 6), 
+                      legend.title = element_text(size = 8),
+                      legend.text = element_text(size = 6),
+                      legend.box.spacing = unit(0, 'pt')) # no space between plot and legend
   
   # theme for publication (one plot)
   pub_theme2 <<- theme(axis.title = element_text(size = 22), 

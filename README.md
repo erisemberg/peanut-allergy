@@ -81,7 +81,7 @@ Then unzip the GTF file representing all genes in the mouse genome:
 gunzip source_data/Mus_musculus.GRCm38.97.gtf.gz --keep
 ```
 
-Create a map between Ensembl IDs and gene names to be used by later scripts:
+Create a map between Ensembl IDs and gene names to be used by later scripts. This will produce a csv file called `GRCm38-gtf-genemap.csv` which maps ensembl IDs to gene symbols. 
 
 ```
 Rscript make_gene_map.R
@@ -93,7 +93,7 @@ Count total genes in each QTL region:
 Rscript count_genes.R
 ```
 
-Count *candidate* genes in each QTL region:  
+Count *candidate* genes in each QTL region. This loops over all QTL and runs the `cand_gene_analysis.R` script to count variants segregating between C3H/HeJ and CC027 (protein-coding and regulatory) within each gene.   
 
 ```
 bash cand_gene.sh
@@ -108,6 +108,12 @@ bash cand_gene.sh -m slurm
 This will generate two directories:
 * `results/cand-gene-analysis/summary`: summary of candidate gene analysis for the region 
 * `results/cand-gene-analysis/vardata`: data on candidate genes in the region, including the number of total variants, regulatory variants and protein-modifying variants 
+
+Create a map between mouse gene symbols and human homologs:
+
+```
+Rscript make_mouse2human_genemap.R
+```
 
 Summarize candidate gene data in table:  
 
