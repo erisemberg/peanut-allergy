@@ -1255,16 +1255,12 @@ png('figs/supplemental/outcome-pca-mtt.png')
 fviz_pca_var(outcome_pca.mtt, repel = TRUE)
 dev.off()
 
-png('figs/vars/screeplot-mtt.png')
+png('figs/supplemental/screeplot-mtt.png')
 fviz_screeplot(outcome_pca.mtt)
 dev.off()
 ```
 
-Try factor analysis:
-
-```{r}
-ggsave('figs/vars/scree-plot.jpeg')
-```
+Try factor analysis
 
 Clear elbow at 1, so try with 1 factor:
 
@@ -1295,6 +1291,7 @@ pcolbym <- pcolbym + labs(fill = bquote(italic(Qpa2)~Genotype)) # use with type 
 
 pcolbym
 
+ensure_directory('figs/multi-qtl')
 jpeg('figs/multi-qtl/T15-Qpa1-Qpa2-boxplot.jpeg', width=650)
 pcolbym
 dev.off()
@@ -1505,7 +1502,7 @@ datasum <- m5m10df %>%
 
 m5m10df$m5m10 <- paste0(m5m10df$m5.geno, "-", m5m10df$m10.geno)
 
-jpeg("figs/fig3/m5m10cluster.jpeg", width=600)
+jpeg("figs/multi-qtl/m5m10cluster.jpeg", width=600)
 ggplot(data = m5m10df, mapping = aes(x = m5m10, y = cluster)) + 
   geom_jitter(width = 0.2, height = 0.2) +
   scale_y_discrete(limits = c("1", "2", "3")) +
