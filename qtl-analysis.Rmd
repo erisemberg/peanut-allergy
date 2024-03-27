@@ -495,7 +495,7 @@ ggsave('figs/fig1/Figure1wSubpanels.jpeg', fig1v2, width=2200, height=2200, unit
 Now that all summary statistics are calculated, import table with phenotype info:
 
 ```{r}
-models <- read.csv("source_data/pnut_bc_models.csv", na.strings = c("", " "))
+models <- read.csv("source_data/pnut_bc_models.csv")
 ```
 
 Covariate analysis via ANOVA:
