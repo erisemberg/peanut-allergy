@@ -738,6 +738,7 @@ dev.off()
 Symptom score scan with modified x-axis (bottom of Supp. Fig. 5)
 
 ```{r}
+ensure_directory('figs/supplemental/other-qtl')
 png('figs/supplemental/other-qtl/symptom_score_modX.png', width = 750)
 plot_modX(sympScore, alternate.chrid = TRUE, xlab = "", ylab = "", main = "Symptom score", cex.main = 2, cex.axis = 2, bandcol = "gray90", ylim = c(0,4.5))
 title(ylab = "LOD", line = 2.5, cex.lab = 2)
