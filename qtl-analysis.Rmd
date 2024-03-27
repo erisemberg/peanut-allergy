@@ -171,6 +171,7 @@ bctemp <- ggplot(dat, aes(x = Time, y = Temp)) +
   big_theme
 bctemp
 
+ensure_directory('figs/eda')
 png('figs/eda/bc-temp.png', width = 550)
 bctemp
 dev.off()
