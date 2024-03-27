@@ -582,7 +582,7 @@ for (i in 1:length(normal_phenos)){
 Read genomic relationship matrix calculated with GCTA-GRM:
 
 ```{r}
-grm <- readGRMBin(prefix = "heritability/plink-grm/pnut")
+grm <- readGRMBin(prefix = "source_data/plink-grm/pnut")
 
 # create genomic relationship matrix from diagonal and off-diagonal elements 
 G <- diag(grm$diag)
