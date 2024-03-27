@@ -1233,13 +1233,12 @@ The chr6 QTL (Qpa4) is associated with time of minimum temp. Are we sure the inf
 outcome_phenos <- c('Temp_15min', 'Temp_30min', 'Temp_45min', 'Temp_60min', 'Min_Temp', 'Min_Temp_Time', 'cluster', 'Temp_aac', 'Symptom_score')
 outcome_pca <- prcomp(WB02$pheno[,outcome_phenos], center = TRUE, scale = TRUE)
 
-
 png('figs/supplemental/outcome-pca.png')
 fviz_pca_var(outcome_pca, repel = TRUE)
 dev.off()
 #ggsave(filename = 'figs/supplemental/outcome-pca.jpeg')
 
-png('figs/vars/scree-plot.png', width = 600)
+png('figs/supplemental/scree-plot.png', width = 600)
 fviz_screeplot(outcome_pca)
 dev.off()
 ```
