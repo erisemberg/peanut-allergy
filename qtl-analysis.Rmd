@@ -20,13 +20,10 @@ See `rqtl_file_proc-pnutbc.R` for R/qtl file generation information.
 
 Genotypes are coded in R/qtl so that 1 = AA and 2 = AB. 
 
---------------------------------------------------------------------------------
 ### Setup
---------------------------------------------------------------------------------
 
 ```{r pkgs, message = FALSE}
 library(qtl)
-library(qtl2)
 library(MASS)
 library(MESS)
 library(rstatix)
@@ -47,6 +44,7 @@ Load ggplot themes:
 load_themes()
 ```
 
+
 ### Load data
 
 ```{r loadcross}
@@ -59,6 +57,7 @@ raw_phenos <- WB02$pheno # save raw phenos
 
 WB02v2 <- convert2cross2(WB02) # convert to Rqtl2 cross object 
 ```
+
 
 ### Genetic map
 
@@ -461,17 +460,16 @@ Make Figure 1:
 pparent_pub <- pparent + pub_theme
 pclust_pub <- pclust + pub_theme
 bctemp_pub <- bctemp + pub_theme
-#pcaplot_pub <- pcaplot_pub + pub_theme
 
-fig1 <- ggarrange(ggarrange(pparent_pub, pclust_pub, "", labels = c('A','B',''), 
-                            ncol = 3, widths = c(0.5,0.47,0.03)), 
-                  ggarrange(symptomhist, "", igehist, "", labels = c('C','','D',''), 
-                            ncol = 4, widths = c(0.4,0.1,0.4,0.1)), 
+fig1 <- ggarrange(ggarrange(pparent_pub, pclust_pub, "", labels = c('A','B',''),
+                            ncol = 3, widths = c(0.5,0.47,0.03)),
+                  ggarrange(symptomhist, "", igehist, "", labels = c('C','','D',''),
+                            ncol = 4, widths = c(0.4,0.1,0.4,0.1)),
                   nrow = 2)
 fig1
 
 ensure_directory('figs/fig1')
-ggsave('figs/fig1/Figure1.jpeg', fig1)
+ggsave('figs/fig1/Figure1.jpeg', fig1, width = 700)
 ```
 
 Version with subpanels showing clusters separately:
@@ -633,12 +631,10 @@ if(!file.exists('results/h2-from-bc-mice.csv')){ # if this code has not already 
   }
 
   write_csv(h2data, file = "results/h2-from-bc-mice.csv")
-  
 } else { # code has already run 
   h2data <- read_csv("results/h2-from-bc-mice.csv")
 }
 ```
-
 
 
 # Single-QTL Analysis 
@@ -680,8 +676,6 @@ Create models:
 create_models(cross.obj = WB02, models = models, covar = covar, mod.dir = "derived_data/models/")
 ```
 
-
-
 ## Significance thresholds  
 
 Permutation tests for LOD thresholds 
@@ -690,7 +684,6 @@ Permutation tests for LOD thresholds
 create_perms(cross.obj = WB02, models = models, covar = covar, 
              perm.dir = "derived_data/perms/")
 ```
-
 
 ## Plot genome scans  
 
@@ -704,27 +697,29 @@ Save genome scans
 
 ```{r}
 ensure_directory('figs/scans')
-plot_scans(models = models[-which(models$obj == 'IgE'),], 
-           save = TRUE, save.dir = 'figs/scans/', ylim = c(0, 4.5))
-plot_scans(models = models[which(models$obj == 'IgE'),], 
-           save = TRUE, save.dir = 'figs/scans/')
+plot_scans(models = models[-which(models$obj == 'IgE'),], save = TRUE, 
+           save.dir = 'figs/scans/', ylim = c(0, 4.5))
+plot_scans(models = models[which(models$obj == 'IgE'),], save = TRUE, 
+           save.dir = 'figs/scans/')
 ```
 
 
 ### Plot scans that will be at the bottom of each figure with modified X-axis 
 
-Cluster scan with modified x-axis (bottom of Fig 2)
+Cluster scan with modified x-axis (bottom of Fig 2):
 
 ```{r}
 png('figs/scans/cluster_1vs23_modX.png', width = 750)
-plot_modX(cluster_1vs23, alternate.chrid = TRUE, xlab = "", ylab = "", main = "Temperature trajectory cluster", cex.main = 2, cex.axis = 2, bandcol = "gray90", ylim = c(0, 4.5))
+plot_modX(cluster_1vs23, alternate.chrid = TRUE, xlab = "", ylab = "", 
+          main = "Temperature trajectory cluster", cex.main = 2, cex.axis = 2, 
+          bandcol = "gray90", ylim = c(0, 4.5))
 title(ylab = "LOD", line = 2.5, cex.lab = 2)
 title(xlab = "Chromosome", cex.lab = 2.3, line = 3.7) # cex.lab was 2
 abline(h = summary(cluster_1vs23.p), lty=1:2)
 dev.off()
 ```
 
-PNsIgE scan with modified x-axis (only scan in Fig 4)
+PNsIgE scan with modified x-axis (only scan in Fig 4):
 
 ```{r}
 png('figs/scans/PNsIgE_modX.png', width = 750)
@@ -735,7 +730,7 @@ abline(h = summary(IgE.p), lty=1:2)
 dev.off()
 ```
 
-Symptom score scan with modified x-axis (bottom of Supp. Fig. 5)
+Symptom score scan with modified x-axis (bottom of Supp. Fig. 5):
 
 ```{r}
 ensure_directory('figs/supplemental/other-qtl')
@@ -752,20 +747,20 @@ dev.off()
 
 Calculate 95% Bayes credible intervals for significant LOD peaks, and create a summary table with data for each LOD peak: marker, chromosome, position, LOD and positions of Bayes credible intervals.
 
-```{r}
+```{r peaks}
 peaks <- doc_peaks(models)
 print(peaks)
 ```
 
 Create table for manuscript. Turn into tibble for easier processing:
 
-```{r}
+```{r peakstbl}
 peakstbl <- as_tibble(peaks) %>% arrange(factor(chr, levels = c('10', '5', '17', '6', '18', '20', '9', '11')))
 ```
 
 ### Adjusted P-values
 
-```{r table2, message=FALSE}
+```{r adjp, message=FALSE}
 peakstbl$adj_pval <- rep(NA, nrow(peakstbl))
 
 for (i in 1:nrow(peakstbl)){
@@ -781,7 +776,6 @@ for (i in 1:nrow(peakstbl)){
             scale = fitgev.sum$par[2], 
             shape = fitgev.sum$par[3], 
             lower.tail = FALSE)
-  # p <- mean(get(permname) > summary(get(modname))[as.integer(chr),'lod'])
   
   peakstbl$adj_pval[i] <- p
 }
@@ -789,7 +783,6 @@ for (i in 1:nrow(peakstbl)){
 peakstbl$adj_pval <- trimws(format(peakstbl$adj_pval, digits=2))
 peakstbl$adj_pval <- as.numeric(format(peakstbl$adj_pval, digits = 3))
 ```
-
 
 ### Genomic location 
 
@@ -841,7 +834,6 @@ for (i in 1:nrow(peakstbl)){
 peakstbl$unadj_pval <- format(peakstbl$unadj_pval, digits = 3)
 ```
 
-
 ### QTL names 
 
 ```{r}
@@ -858,7 +850,6 @@ peakstbl$QTL <- c(rep('Qpa1', qtl_pheno_counts$n[qtl_pheno_counts$chr==10]),
                   rep('Qpa7', qtl_pheno_counts$n[qtl_pheno_counts$chr==9]),
                   rep('Qpa8', qtl_pheno_counts$n[qtl_pheno_counts$chr==11]))
 ```
-
 
 ### Phenotypic variance explained
 
@@ -890,7 +881,7 @@ for (i in 1:nrow(peakstbl)){
 peakstbl$phenotypic.var.expl <- paste0(as.numeric(format(peakstbl$phenotypic.var.expl, digits=3))*100, '%')
 ```
 
-### Format and save 
+### Format and save
 
 Remove redundant data, re-order: 
 
@@ -911,6 +902,8 @@ Save to csv:
 write.csv(peakstbl, file = "results/QTLsummary.csv", row.names = FALSE)
 ```
 
+
+## Multiple QTL analysis 
 
 ### Variance explained by Qpa1 and Qpa2 
 
@@ -937,7 +930,6 @@ a2 <- uAB2 - uAA2
 h2 <- (a1^2 + a2^2) / (a1^2 + a2^2 + 4*sigma2)
 print(h2)
 ```
-
 
 ### Variance explained by Qpa1-3
 
@@ -968,7 +960,6 @@ h2 <- (a1^2 + a2^2 + a3^2) / (a1^2 + a2^2 +a3^2 + 4*sigma2)
 print(h2)
 ```
 
-
 ### Variance of PNsIgE explained by Qpa7 and Qpa8 
 
 ```{r}
@@ -992,7 +983,7 @@ print(h2)
 ```
 
 
-### Phenotype x genotype plots 
+## Phenotype x genotype plots 
 
 Plot PxG plots for all significant LOD peaks
 
@@ -1017,11 +1008,11 @@ plot_pxg(cross.obj = WB02, raw.data = raw_phenos, geno.map = list(A = "CC027", B
 ```
 
 
-#### Stacked bar plots isntead of scatter plots for categorical phenotypes 
+### Stacked bar plots for categorical phenotypes
 
-Qpa2-cluster 
+Qpa2 / cluster (binary)
 
-```{r barplot}
+```{r qpa2cluster}
 ggdat <- data.frame(Genotype = pull.geno(WB02i, 5)[,'UNC9309125'], 
                     Cluster = WB02$pheno$cluster)
 ggdat$Cluster <- ifelse(ggdat$Cluster == 1, "Non-reactor", "Reactor")
@@ -1033,20 +1024,21 @@ ggdatsum <- ggdat %>%
   dplyr::summarize(n = n()) %>%
   mutate(Frequency = n / sum(n))
 
+xlab <- as.expression(bquote(italic(.('Qpa2'))*" (chr5) "*Genotype))
+
 ensure_directory("figs/fig2")
 png("figs/fig2/Qpa2-cluster.png", width = 700)
 ggplot(data = ggdatsum, mapping = aes(x = Genotype, y = Frequency, fill = Cluster)) + 
   geom_bar(stat = 'identity', position = 'fill') +
-  scale_fill_brewer(palette = 'Dark2') + 
-  labs(x = bquote(italic(Qpa2)~(chr5)~Genotype)) +
+  scale_fill_manual(values = c('#1B9E77', '#88CCEE')) + 
+  labs(x = xlab) +
   big_pxg_theme
 dev.off()
 ```
 
+Qpa4 / time of min temp (categorical)
 
-Qpa4-time of min temp (categorical)
-
-```{r barplot2}
+```{r qpa4mtt}
 ggdat <- data.frame(Genotype = pull.geno(WB02, chr=6)[,'mbackupUNC060210105'], 
                     Min_Temp_Time = WB02$pheno$Min_Temp_Time)
 ggdat$Min_Temp_Time <- factor(ggdat$Min_Temp_Time)
@@ -1057,21 +1049,24 @@ ggdatsum <- ggdat %>%
   dplyr::summarize(n = n()) %>%
   mutate(Frequency = n / sum(n))
 
+xlab <- as.expression(bquote(italic(.('Qpa4'))*" (chr6) "*Genotype))
+blues <- brewer.pal(n=6, 'Blues')[-1]
+
 ensure_directory("figs/supplemental/other-qtl")
 png("figs/supplemental/other-qtl/Qpa4-minTempTime.png", width = 700)
 ggplot(data = ggdatsum, mapping = aes(x = Genotype, y = Frequency, fill = Min_Temp_Time)) + 
   geom_bar(stat = 'identity', position = 'fill') +
-  scale_fill_brewer(palette = 'Dark2') + 
-  labs(x = bquote(italic(Qpa4)~(chr6)~Genotype), fill = "Min temp time") + 
+  scale_fill_manual(values = blues) + 
+  labs(x = xlab, fill = "Min temp time") + 
   big_pxg_theme
 dev.off()
 ```
 
+Qpa3 / symptom score (categorical)
 
-Qpa3-symptom score (categorical)
-
-```{r barplot3}
-ggdat2 <- data.frame(Genotype = pull.geno(WB02, chr=17)[,'S6Y171422147'], 'Symptom score' = WB02$pheno$Symptom_score)
+```{r qpa3ss}
+ggdat2 <- data.frame(Genotype = pull.geno(WB02, chr=17)[,'S6Y171422147'], 
+                     'Symptom score' = WB02$pheno$Symptom_score)
 ggdat2$Symptom.score <- factor(ggdat2$Symptom.score)
 ggdat2$Genotype <- ifelse(ggdat2$Genotype == 1, 'CC027/CC027', 'CC027/C3H')
 ggdat2$Genotype <- factor(ggdat2$Genotype, levels = c('CC027/CC027', 'CC027/C3H'))
@@ -1080,11 +1075,13 @@ ggdat2sum <- ggdat2 %>%
   dplyr::summarize(n = n()) %>%
   mutate(Frequency = n / sum(n))
 
+xlab <- as.expression(bquote(italic(.('Qpa3'))*" (chr17) "*Genotype))
+
 png("figs/supplemental/other-qtl/Qpa3-sympScore.png", width = 720)
 ggplot(data = ggdat2sum, mapping = aes(x = Genotype, y = Frequency, fill = Symptom.score)) + 
   geom_bar(stat = 'identity', position = 'fill') +
-  scale_fill_brewer(palette = 'Dark2') + 
-  labs(x = bquote(italic(Qpa3)~(chr17)~Genotype), fill = "Symptom score") +
+  scale_fill_manual(values = blues) + 
+  labs(x = xlab, fill = "Symptom score") +
   big_pxg_theme
 dev.off()
 ```
@@ -1106,7 +1103,6 @@ chr9m_lods <- c(T15[chr9m,'lod'], T30[chr9m,'lod'], T45[chr9m,'lod'],
 chr9m_assoc <- data.frame(phenos = resp_phenos, 
                           lods = chr9m_lods, 
                           unadj_pval = rep(NA, length(chr9m_lods)))
-
 
 for (i in 1:length(resp_phenos)){
   if (resp_phenos[i] == 'Symptom_score'){
@@ -1147,7 +1143,7 @@ for (i in 1:length(resp_phenos)){
 
 # Multiple QTL Analysis 
 
-marker genotypes from temp scans: 
+Marker genotypes from temp scans: 
 
 ```{r}
 m5 <- 'UNC9309125' # chr5 marker from cluster scan
@@ -1185,7 +1181,7 @@ step_mod <- stepAIC(full_mod, direction = "both", trace = TRUE, k = log(n))
 
 Is Qpa1*Qpa2 interaction significant? 
 
-```{r}
+```{r int}
 mod1 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + m6_genos)
 mod6 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18_genos + m6_genos + m10_genos*m5_genos)
 anova(mod6, mod1)
@@ -1224,7 +1220,7 @@ modwQpa8 <- lm(temp_aac ~ t0 + m10_genos + m5_genos + m17_genos + mX_genos + m18
 anova(modwIgE, modwQpa8)
 ```
 
-*No.*
+*No, PNsIgE QTL do not improve model predicting temp response.*
 
 
 The chr6 QTL (Qpa4) is associated with time of minimum temp. Are we sure the info captured by that phenotype is also captured in AAC (i.e. is AAC a representative phenotype for time of minimum temp)?
@@ -1260,7 +1256,8 @@ fviz_screeplot(outcome_pca.mtt)
 dev.off()
 ```
 
-Try factor analysis
+
+Try factor analysis.
 
 Clear elbow at 1, so try with 1 factor:
 
@@ -1273,6 +1270,7 @@ fa1
 Min_Temp_Time and Temp_0min have high uniqueness and are not strongly associated with Factor 1. 
 
 Taken together, we believe that Min_Temp_Time is capturing different info from Temp-AAC, so we still believe Qpa4. 
+
 
 ### Do Qpa1 (chr10) and Qpa2 (chr5) interact or effect phenotype additively?
 
@@ -1292,7 +1290,7 @@ pcolbym <- pcolbym + labs(fill = bquote(italic(Qpa2)~Genotype)) # use with type 
 pcolbym
 
 ensure_directory('figs/multi-qtl')
-jpeg('figs/multi-qtl/T15-Qpa1-Qpa2-boxplot.jpeg', width=650)
+png('figs/multi-qtl/T15-Qpa1-Qpa2-boxplot.png', width=650)
 pcolbym
 dev.off()
 ```
@@ -1353,9 +1351,9 @@ pcolbymaac <- pcolbymaac +
   scale_color_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype))
 #pcolbymaac <- pcolbymaac + labs(col = bquote(italic(Qpa2)~Genotype)) # use with type = 'scatter'
 
-pcolbymaac 
+pcolbymaac
 
-jpeg('figs/multi-qtl/Taac-Qpa1-Qpa2-boxplot.jpeg', width=650)
+png('figs/multi-qtl/Taac-Qpa1-Qpa2-boxplot.png', width=650)
 pcolbymaac
 dev.off()
 ```
@@ -1421,43 +1419,23 @@ df$geno2 <- mapvalues(df$geno2, from = c(1,2), to = geno.labels)
 df$geno <- factor(df$geno, levels = geno.labels)
 df$geno2 <- factor(df$geno2, levels = geno.labels)
 
+xlab <- as.expression(bquote(italic(.('Qpa1'))*Genotype))
+
 jpeg("figs/multi-qtl/Qpa1Qpa2wsig.jpeg", width = 650)
 ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
      geom_boxplot() +
-     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
-     geom_signif(annotation = "*", y_position = 2.5, xmin = 0.813, xmax = 1.185, tip_length = 0, textsize = 9) +
-     geom_signif(annotation = "*", y_position = 3.2, xmin = 0.813, xmax = 1.81, tip_length = 0, textsize = 9) +
-     geom_signif(annotation = "*", y_position = 1.8, xmin = 1.81, xmax = 2.188, tip_length = 0, textsize = 9) +
-     geom_signif(annotation = "*", y_position = 2.8, xmin = 1.185, xmax = 2.188, tip_length = 0, textsize = 9) +
-     labs(y = "Temp AAC (normalized)", x = bquote(italic(Qpa1)~Genotype)) +
-     poster_theme
-dev.off()
-
-
-jpeg("figs/multi-qtl/Qpa1Qpa2wsig_v2.jpeg", width = 650)
-ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
-     geom_boxplot() +
-     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
+     scale_fill_manual(values = c('#994455', '#6699CC'), name = bquote(italic(Qpa2)~Genotype)) + 
      geom_signif(annotation = "*", y_position = 2.5, xmin = 0.813, xmax = 1.185, tip_length = 0.01, textsize = 7) +
      geom_signif(annotation = "*", y_position = 3.1, xmin = 0.813, xmax = 1.81, tip_length = 0.01, textsize = 7) +
      geom_signif(annotation = "*", y_position = 1.8, xmin = 1.81, xmax = 2.188, tip_length = 0.01, textsize = 7) +
      geom_signif(annotation = "*", y_position = 2.7, xmin = 1.185, xmax = 2.188, tip_length = 0.01, textsize = 7) +
-     labs(y = "Temp AAC (normalized)", x = bquote(italic(Qpa1)~Genotype)) +
-     poster_theme
-dev.off()
-
-
-jpeg("figs/multi-qtl/Qpa1Qpa2.jpeg", width = 650, height = 450)
-ggplot(data = df, mapping = aes(x = geno, y = pheno, fill = geno2)) + 
-     geom_boxplot() +
-     scale_fill_brewer(palette = 'Dark2', name = bquote(italic(Qpa2)~Genotype)) + 
-     labs(y = "Temp AAC", x = bquote(italic(Qpa1)~Genotype)) +
+     labs(y = "Temp AAC (normalized)", x = xlab) +
      poster_theme
 dev.off()
 ```
 
 
-## Regress on number of CC027 alleles 
+### Regress on number of CC027 alleles 
 
 Calculate number of CC027 alleles: 
 
@@ -1502,7 +1480,7 @@ datasum <- m5m10df %>%
 
 m5m10df$m5m10 <- paste0(m5m10df$m5.geno, "-", m5m10df$m10.geno)
 
-jpeg("figs/multi-qtl/m5m10cluster.jpeg", width=600)
+png("figs/multi-qtl/m5m10cluster.png", width=600)
 ggplot(data = m5m10df, mapping = aes(x = m5m10, y = cluster)) + 
   geom_jitter(width = 0.2, height = 0.2) +
   scale_y_discrete(limits = c("1", "2", "3")) +
@@ -1515,10 +1493,6 @@ ggplot(data = m5m10df, mapping = aes(x = m5m10, y = cluster)) +
 dev.off()
 ```
 
-
-
-### Contingency table test 
-
 Two-way contingency table: overall genotype vs cluster 
 
 ```{r}
@@ -1528,7 +1502,6 @@ datasum2way <- m5m10df %>%
 
 # 2-way table, poisson model 
 mod2p <- glm(n ~ m5m10*cluster, datasum2way, family = 'poisson')
-
 ```
 
 Three-way contingency table: chr 5 genotype, chr 10 genotype, cluster 
@@ -1573,5 +1546,4 @@ ggplot(data = df, mapping = aes(x = geno, y = pheno)) +
        y = 'Temp at 30 min', x = 'Genotype')
 #dev.off()
 ```
-
 
